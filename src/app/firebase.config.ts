@@ -12,12 +12,13 @@
 // ---------------------------------------------------------------------------
 
 export const firebaseConfig = {
-  apiKey: 'PASTE_API_KEY',
-  authDomain: 'PASTE_PROJECT.firebaseapp.com',
-  projectId: 'PASTE_PROJECT',
-  storageBucket: 'PASTE_PROJECT.appspot.com',
-  messagingSenderId: 'PASTE_SENDER_ID',
-  appId: 'PASTE_APP_ID',
+  apiKey: 'AIzaSyB_25Y7apafFSNJ1T8fYhNwJxSvFGrZcRo',
+  authDomain: 'perfume-3b075.firebaseapp.com',
+  projectId: 'perfume-3b075',
+  storageBucket: 'perfume-3b075.firebasestorage.app',
+  messagingSenderId: '323158526612',
+  appId: '1:323158526612:web:567fab64313686c4b44281',
+  measurementId: 'G-E56W1XQP20',
 };
 
 /** True once you've replaced the placeholders above with real values. */
