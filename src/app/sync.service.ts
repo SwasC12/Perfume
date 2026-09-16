@@ -13,7 +13,8 @@ import {
 import { firebaseConfig, isFirebaseConfigured } from './firebase.config';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
-import { Oil, RumiProduct } from './models';
+import { WishlistService } from './wishlist.service';
+import { Oil, RumiProduct, WishlistItem } from './models';
 
 const CODE_KEY = 'perfume.synccode.v1';
 
@@ -22,6 +23,7 @@ type SyncStatus = 'off' | 'connecting' | 'synced' | 'error';
 interface WorkspaceDoc {
   oils?: Oil[];
   rumi?: RumiProduct[];
+  wishlist?: WishlistItem[];
   updatedAt?: number;
 }
 
@@ -41,6 +43,7 @@ function mergeById<T extends { id: string; updatedAt: number }>(a: T[], b: T[]):
 export class SyncService {
   private oilsSvc = inject(OilsService);
   private rumiSvc = inject(RumiService);
+  private wishSvc = inject(WishlistService);
 
   readonly configured = isFirebaseConfigured();
   readonly code = signal<string | null>(localStorage.getItem(CODE_KEY));
@@ -65,7 +68,11 @@ export class SyncService {
 
     // Push local changes up to the cloud (debounced, content-deduped).
     effect(() => {
-      const json = this.serialize(this.oilsSvc.oils(), this.rumiSvc.products());
+      const json = this.serialize(
+        this.oilsSvc.oils(),
+        this.rumiSvc.products(),
+        this.wishSvc.items(),
+      );
       if (!this.docRef || this.applyingRemote) return;
       if (json === this.lastSyncedJson) return;
       this.scheduleWrite(json);
@@ -90,10 +97,12 @@ export class SyncService {
       // nothing is lost, then that merged set becomes the shared truth.
       const mergedOils = mergeById(this.oilsSvc.oils(), remote?.oils ?? []);
       const mergedRumi = mergeById(this.rumiSvc.products(), remote?.rumi ?? []);
-      this.applyRemote({ oils: mergedOils, rumi: mergedRumi });
+      const mergedWish = mergeById(this.wishSvc.items(), remote?.wishlist ?? []);
+      this.applyRemote({ oils: mergedOils, rumi: mergedRumi, wishlist: mergedWish });
       await setDoc(this.docRef, {
         oils: mergedOils,
         rumi: mergedRumi,
+        wishlist: mergedWish,
         updatedAt: Date.now(),
       });
 
@@ -128,10 +137,12 @@ export class SyncService {
   private applyRemote(data: WorkspaceDoc): void {
     const oils = data.oils ?? [];
     const rumi = data.rumi ?? [];
-    this.lastSyncedJson = this.serialize(oils, rumi);
+    const wishlist = data.wishlist ?? [];
+    this.lastSyncedJson = this.serialize(oils, rumi, wishlist);
     this.applyingRemote = true;
     this.oilsSvc.oils.set(oils);
     this.rumiSvc.products.set(rumi);
+    this.wishSvc.items.set(wishlist);
     this.applyingRemote = false;
     if (this.status() === 'connecting') this.status.set('synced');
   }
@@ -144,6 +155,7 @@ export class SyncService {
         await setDoc(this.docRef, {
           oils: this.oilsSvc.oils(),
           rumi: this.rumiSvc.products(),
+          wishlist: this.wishSvc.items(),
           updatedAt: Date.now(),
         });
         this.lastSyncedJson = json;
@@ -154,8 +166,8 @@ export class SyncService {
     }, 700);
   }
 
-  private serialize(oils: Oil[], rumi: RumiProduct[]): string {
-    return JSON.stringify({ oils, rumi });
+  private serialize(oils: Oil[], rumi: RumiProduct[], wishlist: WishlistItem[]): string {
+    return JSON.stringify({ oils, rumi, wishlist });
   }
 
   private teardown(): void {

@@ -2,10 +2,12 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
+import { WishlistService } from './wishlist.service';
 import { SyncService } from './sync.service';
-import { Oil, RumiProduct } from './models';
+import { IconComponent } from './icon.component';
+import { Oil, RumiProduct, WishlistItem } from './models';
 
-type Tab = 'oils' | 'rumi';
+type Tab = 'oils' | 'wishlist' | 'rumi';
 
 interface OilForm {
   name: string;
@@ -25,19 +27,29 @@ interface RumiForm {
   notes: string;
 }
 
+interface WishForm {
+  name: string;
+  price: number | null;
+  imageUrl: string;
+  permalink: string;
+  notes: string;
+}
+
 @Component({
   selector: 'app-root',
-  imports: [FormsModule],
+  imports: [FormsModule, IconComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
 export class AppComponent {
   readonly oilsSvc = inject(OilsService);
   readonly rumiSvc = inject(RumiService);
+  readonly wishSvc = inject(WishlistService);
   readonly syncSvc = inject(SyncService);
 
   readonly tab = signal<Tab>('oils');
   readonly oilSearch = signal('');
+  readonly wishSearch = signal('');
   readonly rumiSearch = signal('');
   readonly rumiInStockOnly = signal(false);
 
@@ -50,6 +62,11 @@ export class AppComponent {
   rumiModalOpen = signal(false);
   editingRumiId: string | null = null;
   rumiForm: RumiForm = this.emptyRumiForm();
+
+  // ---- Wishlist modal ----
+  wishModalOpen = signal(false);
+  editingWishId: string | null = null;
+  wishForm: WishForm = this.emptyWishForm();
 
   // ---- Sync ----
   syncModalOpen = signal(false);
@@ -64,6 +81,12 @@ export class AppComponent {
     const q = this.oilSearch().trim().toLowerCase();
     const list = this.oilsSvc.sorted();
     return q ? list.filter((o) => o.name.toLowerCase().includes(q)) : list;
+  });
+
+  readonly filteredWishlist = computed<WishlistItem[]>(() => {
+    const q = this.wishSearch().trim().toLowerCase();
+    const list = this.wishSvc.sorted();
+    return q ? list.filter((i) => i.name.toLowerCase().includes(q)) : list;
   });
 
   readonly filteredRumi = computed<RumiProduct[]>(() => {
@@ -185,16 +208,80 @@ export class AppComponent {
     });
   }
 
-  addRumiToMyOils(p: RumiProduct): void {
+  addRumiToWishlist(p: RumiProduct): void {
+    if (this.wishSvc.has(p.name)) {
+      this.showToast('Already on your wishlist');
+      return;
+    }
+    this.wishSvc.addFromRumi(p);
+    this.showToast('Added to wishlist');
+  }
+
+  isOnWishlist(name: string): boolean {
+    return this.wishSvc.has(name);
+  }
+
+  // ---------- Wishlist ----------
+  openAddWish(): void {
+    this.editingWishId = null;
+    this.wishForm = this.emptyWishForm();
+    this.wishModalOpen.set(true);
+  }
+
+  openEditWish(i: WishlistItem): void {
+    this.editingWishId = i.id;
+    this.wishForm = {
+      name: i.name,
+      price: i.price,
+      imageUrl: i.imageUrl ?? '',
+      permalink: i.permalink ?? '',
+      notes: i.notes ?? '',
+    };
+    this.wishModalOpen.set(true);
+  }
+
+  saveWish(): void {
+    const name = this.wishForm.name.trim();
+    if (!name) return;
+    const payload = {
+      name,
+      price: this.numOrNull(this.wishForm.price),
+      imageUrl: this.wishForm.imageUrl.trim() || undefined,
+      permalink: this.wishForm.permalink.trim() || undefined,
+      notes: this.wishForm.notes.trim() || undefined,
+    };
+    if (this.editingWishId) {
+      this.wishSvc.update(this.editingWishId, payload);
+      this.showToast('Wishlist item updated');
+    } else {
+      this.wishSvc.add(payload);
+      this.showToast('Added to wishlist');
+    }
+    this.wishModalOpen.set(false);
+  }
+
+  askDeleteWish(i: WishlistItem): void {
+    this.confirm.set({
+      message: `Remove "${i.name}" from your wishlist?`,
+      action: () => {
+        this.wishSvc.remove(i.id);
+        this.showToast('Removed from wishlist');
+      },
+    });
+  }
+
+  moveWishToOils(i: WishlistItem): void {
     this.oilsSvc.add({
-      name: p.name.replace(/^Inspired By\s+/i, '').trim() || p.name,
-      imageUrl: p.imageUrl,
+      name: i.name,
+      imageUrl: i.imageUrl,
       amountMl: null,
       capacityMl: null,
       lowThresholdMl: null,
-      notes: p.permalink ? `From Rumi: ${p.permalink}` : undefined,
+      notes: i.permalink ? `From Rumi: ${i.permalink}` : undefined,
     });
-    this.showToast('Added to My Oils');
+    this.wishSvc.remove(i.id);
+    this.showToast('Got it! Moved to My Oils');
+    this.tab.set('oils');
   }
 
   // ---------- Sync ----------
@@ -285,5 +372,9 @@ export class AppComponent {
 
   private emptyRumiForm(): RumiForm {
     return { name: '', fromPrice: null, imageUrl: '', permalink: '', inStock: true, notes: '' };
+  }
+
+  private emptyWishForm(): WishForm {
+    return { name: '', price: null, imageUrl: '', permalink: '', notes: '' };
   }
 }

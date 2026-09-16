@@ -13,8 +13,10 @@ offline and as an installed app.
   "running low" warning. A fill bar shows how much is left at a glance. Add / edit / delete.
 - **Buy from Rumi** — one-tap **Sync from Rumi** pulls the live "Inspired By Oils"
   catalogue (name, price, in-stock status, image) via a serverless proxy. Filter by
-  in stock, add items manually, edit, delete, open on Rumi, or "＋" straight into My Oils.
-- Clean UI with loaders, skeletons, image cards, search, and empty states.
+  in stock, add items manually, edit, delete, open on Rumi, or star to save to your wishlist.
+- **Wishlist** — star fragrances from Rumi (or add your own) to a wishlist. When you
+  actually buy one, hit **Got it** to move it into My Oils.
+- Clean UI with inline SVG icons, loaders, skeletons, image cards, search, and empty states.
 
 - **Sync across devices** — optional Firebase (Firestore) sync. Enter the same
   **sync code** on your phone, tablet, and laptop to share one live dataset. No

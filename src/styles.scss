@@ -45,7 +45,7 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand .logo {
-  font-size: 28px;
+  color: var(--accent);
   background: var(--surface);
   width: 52px; height: 52px;
   display: grid; place-items: center;
@@ -202,7 +202,7 @@ body {
   overflow: hidden;
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
-.thumb-fallback { font-size: 42px; opacity: 0.7; }
+.thumb-fallback { color: var(--accent); opacity: 0.5; }
 .badge {
   position: absolute;
   top: 8px; left: 8px;
@@ -240,7 +240,25 @@ body {
   padding: 8px 10px 10px;
   justify-content: flex-end;
 }
-.actions.rumi-actions { justify-content: space-between; }
+.actions.rumi-actions { justify-content: space-between; align-items: center; }
+.icon-group { display: flex; gap: 4px; }
+.icon.star { color: var(--ink-dim); }
+.icon.star.active { color: #e0a92e; }
+.got-it {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ok);
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.got-it:hover { filter: brightness(0.97); }
 .icon {
   border: 0;
   background: transparent;
@@ -262,7 +280,7 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-.empty-icon { font-size: 46px; }
+.empty-icon { color: var(--accent); opacity: 0.75; }
 .empty h3 { margin: 12px 0 4px; }
 .empty p { color: var(--ink-dim); margin: 0 auto 16px; max-width: 340px; }
 .banner {

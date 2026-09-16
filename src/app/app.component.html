@@ -1,7 +1,7 @@
 <div class="app">
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🧴</span>
+      <span class="logo"><app-icon name="droplet" [size]="26" /></span>
       <div>
         <h1>Oil Tracker</h1>
         <p class="sub">Your stash &amp; what's fresh at Rumi</p>
@@ -24,6 +24,9 @@
     <button [class.active]="tab() === 'oils'" (click)="tab.set('oils')">
       My Oils <span class="count">{{ oilsSvc.oils().length }}</span>
     </button>
+    <button [class.active]="tab() === 'wishlist'" (click)="tab.set('wishlist')">
+      Wishlist <span class="count">{{ wishSvc.items().length }}</span>
+    </button>
     <button [class.active]="tab() === 'rumi'" (click)="tab.set('rumi')">
       Buy from Rumi <span class="count">{{ rumiSvc.products().length }}</span>
     </button>
@@ -35,16 +38,16 @@
       <div class="toolbar">
         <input class="search" type="search" placeholder="Search my oils…"
                [ngModel]="oilSearch()" (ngModelChange)="oilSearch.set($event)" />
-        <button class="btn primary" (click)="openAddOil()">＋ Add oil</button>
+        <button class="btn primary" (click)="openAddOil()"><app-icon name="plus" [size]="16" /> Add oil</button>
       </div>
 
       @if (filteredOils().length === 0) {
         <div class="empty">
-          <div class="empty-icon">🫗</div>
+          <div class="empty-icon"><app-icon name="droplet" [size]="44" /></div>
           <h3>{{ oilSearch() ? 'No matches' : 'No oils yet' }}</h3>
           <p>{{ oilSearch() ? 'Try a different search.' : 'Add the oils you currently have to start tracking what\'s left.' }}</p>
           @if (!oilSearch()) {
-            <button class="btn primary" (click)="openAddOil()">＋ Add your first oil</button>
+            <button class="btn primary" (click)="openAddOil()"><app-icon name="plus" [size]="16" /> Add your first oil</button>
           }
         </div>
       } @else {
@@ -55,7 +58,7 @@
                 @if (o.imageUrl) {
                   <img [src]="o.imageUrl" [alt]="o.name" loading="lazy" (error)="onImgError($event)" />
                 } @else {
-                  <span class="thumb-fallback">🧴</span>
+                  <span class="thumb-fallback"><app-icon name="droplet" [size]="40" /></span>
                 }
                 @if (isLow(o)) { <span class="badge warn">Low</span> }
               </div>
@@ -74,8 +77,59 @@
                 @if (o.notes) { <p class="notes">{{ o.notes }}</p> }
               </div>
               <div class="actions">
-                <button class="icon" title="Edit" (click)="openEditOil(o)">✏️</button>
-                <button class="icon" title="Delete" (click)="askDeleteOil(o)">🗑️</button>
+                <button class="icon" title="Edit" (click)="openEditOil(o)"><app-icon name="edit" [size]="17" /></button>
+                <button class="icon" title="Delete" (click)="askDeleteOil(o)"><app-icon name="trash" [size]="17" /></button>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ WISHLIST ============ -->
+  @if (tab() === 'wishlist') {
+    <section class="view">
+      <div class="toolbar">
+        <input class="search" type="search" placeholder="Search wishlist…"
+               [ngModel]="wishSearch()" (ngModelChange)="wishSearch.set($event)" />
+        <button class="btn primary" (click)="openAddWish()"><app-icon name="plus" [size]="16" /> Add to wishlist</button>
+      </div>
+
+      @if (filteredWishlist().length === 0) {
+        <div class="empty">
+          <div class="empty-icon"><app-icon name="star" [size]="44" /></div>
+          <h3>{{ wishSearch() ? 'No matches' : 'Wishlist is empty' }}</h3>
+          <p>Browse <strong>Buy from Rumi</strong> and tap the star to save fragrances you want. When you get one, move it to My Oils.</p>
+          @if (!wishSearch()) {
+            <button class="btn" (click)="tab.set('rumi')">Browse Rumi <app-icon name="arrow-right" [size]="15" /></button>
+          }
+        </div>
+      } @else {
+        <div class="grid">
+          @for (i of filteredWishlist(); track i.id) {
+            <article class="card">
+              <div class="thumb">
+                @if (i.imageUrl) {
+                  <img [src]="i.imageUrl" [alt]="i.name" loading="lazy" (error)="onImgError($event)" />
+                } @else {
+                  <span class="thumb-fallback"><app-icon name="star" [size]="40" /></span>
+                }
+              </div>
+              <div class="body">
+                <h3 class="name">{{ i.name }}</h3>
+                <p class="meta">from <strong>{{ price(i.price) }}</strong></p>
+                @if (i.notes) { <p class="notes">{{ i.notes }}</p> }
+              </div>
+              <div class="actions rumi-actions">
+                <button class="got-it" title="I got it — move to My Oils" (click)="moveWishToOils(i)"><app-icon name="check" [size]="16" /> Got it</button>
+                <div class="icon-group">
+                  @if (i.permalink) {
+                    <a class="icon" [href]="i.permalink" target="_blank" rel="noopener" title="Open on Rumi"><app-icon name="link" [size]="17" /></a>
+                  }
+                  <button class="icon" title="Edit" (click)="openEditWish(i)"><app-icon name="edit" [size]="17" /></button>
+                  <button class="icon" title="Remove" (click)="askDeleteWish(i)"><app-icon name="trash" [size]="17" /></button>
+                </div>
               </div>
             </article>
           }
@@ -94,9 +148,9 @@
           <input type="checkbox" [ngModel]="rumiInStockOnly()" (ngModelChange)="rumiInStockOnly.set($event)" />
           In stock only
         </label>
-        <button class="btn" (click)="openAddRumi()">＋ Manual</button>
+        <button class="btn" (click)="openAddRumi()"><app-icon name="plus" [size]="16" /> Manual</button>
         <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()">
-          @if (rumiSvc.loading()) { <span class="spin"></span> Syncing… } @else { ⟳ Sync from Rumi }
+          @if (rumiSvc.loading()) { <span class="spin"></span> Syncing… } @else { <app-icon name="refresh" [size]="16" /> Sync from Rumi }
         </button>
       </div>
 
@@ -106,7 +160,7 @@
       </p>
 
       @if (rumiSvc.error()) {
-        <div class="banner error">⚠️ {{ rumiSvc.error() }}</div>
+        <div class="banner error">{{ rumiSvc.error() }}</div>
       }
 
       @if (rumiSvc.loading() && rumiSvc.products().length === 0) {
@@ -120,10 +174,10 @@
         </div>
       } @else if (filteredRumi().length === 0) {
         <div class="empty">
-          <div class="empty-icon">🛒</div>
+          <div class="empty-icon"><app-icon name="bag" [size]="44" /></div>
           <h3>{{ rumiSearch() || rumiInStockOnly() ? 'No matches' : 'Nothing here yet' }}</h3>
           <p>Hit <strong>Sync from Rumi</strong> to pull the live catalogue, or add an item manually.</p>
-          <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()">⟳ Sync from Rumi</button>
+          <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()"><app-icon name="refresh" [size]="16" /> Sync from Rumi</button>
         </div>
       } @else {
         <div class="grid">
@@ -133,7 +187,7 @@
                 @if (p.imageUrl) {
                   <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
                 } @else {
-                  <span class="thumb-fallback">🌸</span>
+                  <span class="thumb-fallback"><app-icon name="bag" [size]="40" /></span>
                 }
                 <span class="badge" [class.ok]="p.inStock" [class.warn]="!p.inStock">
                   {{ p.inStock ? 'In stock' : 'Out' }}
@@ -146,12 +200,18 @@
                 @if (p.notes) { <p class="notes">{{ p.notes }}</p> }
               </div>
               <div class="actions rumi-actions">
-                @if (p.permalink) {
-                  <a class="icon" [href]="p.permalink" target="_blank" rel="noopener" title="Open on Rumi">🔗</a>
-                }
-                <button class="icon" title="Add to My Oils" (click)="addRumiToMyOils(p)">➕</button>
-                <button class="icon" title="Edit" (click)="openEditRumi(p)">✏️</button>
-                <button class="icon" title="Remove" (click)="askDeleteRumi(p)">🗑️</button>
+                <button class="icon star" [class.active]="isOnWishlist(p.name)"
+                        [title]="isOnWishlist(p.name) ? 'On your wishlist' : 'Add to wishlist'"
+                        (click)="addRumiToWishlist(p)">
+                  <app-icon name="star" [size]="20" [filled]="isOnWishlist(p.name)" />
+                </button>
+                <div class="icon-group">
+                  @if (p.permalink) {
+                    <a class="icon" [href]="p.permalink" target="_blank" rel="noopener" title="Open on Rumi"><app-icon name="link" [size]="17" /></a>
+                  }
+                  <button class="icon" title="Edit" (click)="openEditRumi(p)"><app-icon name="edit" [size]="17" /></button>
+                  <button class="icon" title="Remove" (click)="askDeleteRumi(p)"><app-icon name="trash" [size]="17" /></button>
+                </div>
               </div>
             </article>
           }
@@ -230,6 +290,36 @@
     </div>
   }
 
+  <!-- ============ WISHLIST MODAL ============ -->
+  @if (wishModalOpen()) {
+    <div class="overlay" (click)="wishModalOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>{{ editingWishId ? 'Edit wishlist item' : 'Add to wishlist' }}</h2>
+        <form (ngSubmit)="saveWish()">
+          <label>Name*
+            <input type="text" [(ngModel)]="wishForm.name" name="wname" required autofocus />
+          </label>
+          <label>Price (R)
+            <input type="number" min="0" [(ngModel)]="wishForm.price" name="wprice" />
+          </label>
+          <label>Image URL
+            <input type="url" [(ngModel)]="wishForm.imageUrl" name="wimg" placeholder="https://…" />
+          </label>
+          <label>Product link
+            <input type="url" [(ngModel)]="wishForm.permalink" name="wlink" placeholder="https://rumifragrances.co.za/…" />
+          </label>
+          <label>Notes
+            <textarea rows="2" [(ngModel)]="wishForm.notes" name="wnotes"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" (click)="wishModalOpen.set(false)">Cancel</button>
+            <button type="submit" class="btn primary" [disabled]="!wishForm.name.trim()">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
   <!-- ============ SYNC MODAL ============ -->
   @if (syncModalOpen()) {
     <div class="overlay" (click)="syncModalOpen.set(false)">
@@ -259,7 +349,7 @@
                    placeholder="e.g. musk-vault" autocomplete="off" />
           </label>
           <div class="modal-actions between">
-            <button type="button" class="btn ghost" (click)="generateSync()">🎲 Generate</button>
+            <button type="button" class="btn ghost" (click)="generateSync()"><app-icon name="shuffle" [size]="16" /> Generate</button>
             <div class="right-group">
               @if (syncSvc.code()) {
                 <button type="button" class="btn" (click)="disconnectSync()">Turn off</button>

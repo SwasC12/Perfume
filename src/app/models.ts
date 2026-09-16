@@ -23,6 +23,17 @@ export interface RumiProduct {
   notes?: string;
 }
 
+export interface WishlistItem {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  price: number | null; // "from" price in ZAR
+  permalink?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface RumiSyncResponse {
   products: RumiProduct[];
   count: number;
