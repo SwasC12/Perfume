@@ -1,0 +1,241 @@
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🧴</span>
+      <div>
+        <h1>Oil Tracker</h1>
+        <p class="sub">Your stash &amp; what's fresh at Rumi</p>
+      </div>
+    </div>
+    @if (oilsSvc.lowCount() > 0) {
+      <span class="low-pill" title="Oils running low">{{ oilsSvc.lowCount() }} low</span>
+    }
+  </header>
+
+  <nav class="tabs">
+    <button [class.active]="tab() === 'oils'" (click)="tab.set('oils')">
+      My Oils <span class="count">{{ oilsSvc.oils().length }}</span>
+    </button>
+    <button [class.active]="tab() === 'rumi'" (click)="tab.set('rumi')">
+      Buy from Rumi <span class="count">{{ rumiSvc.products().length }}</span>
+    </button>
+  </nav>
+
+  <!-- ============ MY OILS ============ -->
+  @if (tab() === 'oils') {
+    <section class="view">
+      <div class="toolbar">
+        <input class="search" type="search" placeholder="Search my oils…"
+               [ngModel]="oilSearch()" (ngModelChange)="oilSearch.set($event)" />
+        <button class="btn primary" (click)="openAddOil()">＋ Add oil</button>
+      </div>
+
+      @if (filteredOils().length === 0) {
+        <div class="empty">
+          <div class="empty-icon">🫗</div>
+          <h3>{{ oilSearch() ? 'No matches' : 'No oils yet' }}</h3>
+          <p>{{ oilSearch() ? 'Try a different search.' : 'Add the oils you currently have to start tracking what\'s left.' }}</p>
+          @if (!oilSearch()) {
+            <button class="btn primary" (click)="openAddOil()">＋ Add your first oil</button>
+          }
+        </div>
+      } @else {
+        <div class="grid">
+          @for (o of filteredOils(); track o.id) {
+            <article class="card" [class.low]="isLow(o)">
+              <div class="thumb">
+                @if (o.imageUrl) {
+                  <img [src]="o.imageUrl" [alt]="o.name" loading="lazy" (error)="onImgError($event)" />
+                } @else {
+                  <span class="thumb-fallback">🧴</span>
+                }
+                @if (isLow(o)) { <span class="badge warn">Low</span> }
+              </div>
+              <div class="body">
+                <h3 class="name">{{ o.name }}</h3>
+                @if (o.amountMl != null) {
+                  <p class="meta">{{ o.amountMl }}<span class="unit">ml</span>
+                    @if (o.capacityMl) { <span class="dim"> / {{ o.capacityMl }}ml</span> }
+                  </p>
+                  @if (fillPercent(o) != null) {
+                    <div class="bar"><span [style.width.%]="fillPercent(o)"></span></div>
+                  }
+                } @else {
+                  <p class="meta dim">Amount not tracked</p>
+                }
+                @if (o.notes) { <p class="notes">{{ o.notes }}</p> }
+              </div>
+              <div class="actions">
+                <button class="icon" title="Edit" (click)="openEditOil(o)">✏️</button>
+                <button class="icon" title="Delete" (click)="askDeleteOil(o)">🗑️</button>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ BUY FROM RUMI ============ -->
+  @if (tab() === 'rumi') {
+    <section class="view">
+      <div class="toolbar">
+        <input class="search" type="search" placeholder="Search Rumi list…"
+               [ngModel]="rumiSearch()" (ngModelChange)="rumiSearch.set($event)" />
+        <label class="chk">
+          <input type="checkbox" [ngModel]="rumiInStockOnly()" (ngModelChange)="rumiInStockOnly.set($event)" />
+          In stock only
+        </label>
+        <button class="btn" (click)="openAddRumi()">＋ Manual</button>
+        <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()">
+          @if (rumiSvc.loading()) { <span class="spin"></span> Syncing… } @else { ⟳ Sync from Rumi }
+        </button>
+      </div>
+
+      <p class="synced">
+        Last synced: {{ syncedAgo() }}
+        @if (rumiSvc.products().length) { · {{ rumiSvc.inStockCount() }} in stock of {{ rumiSvc.products().length }} }
+      </p>
+
+      @if (rumiSvc.error()) {
+        <div class="banner error">⚠️ {{ rumiSvc.error() }}</div>
+      }
+
+      @if (rumiSvc.loading() && rumiSvc.products().length === 0) {
+        <div class="grid">
+          @for (s of [1,2,3,4,5,6]; track s) {
+            <article class="card skeleton">
+              <div class="thumb sk"></div>
+              <div class="body"><div class="sk-line"></div><div class="sk-line short"></div></div>
+            </article>
+          }
+        </div>
+      } @else if (filteredRumi().length === 0) {
+        <div class="empty">
+          <div class="empty-icon">🛒</div>
+          <h3>{{ rumiSearch() || rumiInStockOnly() ? 'No matches' : 'Nothing here yet' }}</h3>
+          <p>Hit <strong>Sync from Rumi</strong> to pull the live catalogue, or add an item manually.</p>
+          <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()">⟳ Sync from Rumi</button>
+        </div>
+      } @else {
+        <div class="grid">
+          @for (p of filteredRumi(); track p.id) {
+            <article class="card" [class.oos]="!p.inStock">
+              <div class="thumb">
+                @if (p.imageUrl) {
+                  <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
+                } @else {
+                  <span class="thumb-fallback">🌸</span>
+                }
+                <span class="badge" [class.ok]="p.inStock" [class.warn]="!p.inStock">
+                  {{ p.inStock ? 'In stock' : 'Out' }}
+                </span>
+                @if (p.source === 'manual') { <span class="badge manual">Manual</span> }
+              </div>
+              <div class="body">
+                <h3 class="name">{{ p.name }}</h3>
+                <p class="meta">from <strong>{{ price(p.fromPrice) }}</strong></p>
+                @if (p.notes) { <p class="notes">{{ p.notes }}</p> }
+              </div>
+              <div class="actions rumi-actions">
+                @if (p.permalink) {
+                  <a class="icon" [href]="p.permalink" target="_blank" rel="noopener" title="Open on Rumi">🔗</a>
+                }
+                <button class="icon" title="Add to My Oils" (click)="addRumiToMyOils(p)">➕</button>
+                <button class="icon" title="Edit" (click)="openEditRumi(p)">✏️</button>
+                <button class="icon" title="Remove" (click)="askDeleteRumi(p)">🗑️</button>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ OIL MODAL ============ -->
+  @if (oilModalOpen()) {
+    <div class="overlay" (click)="oilModalOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>{{ editingOilId ? 'Edit oil' : 'Add oil' }}</h2>
+        <form (ngSubmit)="saveOil()">
+          <label>Name*
+            <input type="text" [(ngModel)]="oilForm.name" name="name" required autofocus />
+          </label>
+          <label>Image URL
+            <input type="url" [(ngModel)]="oilForm.imageUrl" name="img" placeholder="https://…" />
+          </label>
+          <div class="row">
+            <label>Remaining (ml)
+              <input type="number" min="0" [(ngModel)]="oilForm.amountMl" name="amt" />
+            </label>
+            <label>Full size (ml)
+              <input type="number" min="0" [(ngModel)]="oilForm.capacityMl" name="cap" />
+            </label>
+          </div>
+          <label>Warn when at/below (ml)
+            <input type="number" min="0" [(ngModel)]="oilForm.lowThresholdMl" name="low" />
+          </label>
+          <label>Notes
+            <textarea rows="2" [(ngModel)]="oilForm.notes" name="notes"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" (click)="oilModalOpen.set(false)">Cancel</button>
+            <button type="submit" class="btn primary" [disabled]="!oilForm.name.trim()">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- ============ RUMI MODAL ============ -->
+  @if (rumiModalOpen()) {
+    <div class="overlay" (click)="rumiModalOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>{{ editingRumiId ? 'Edit item' : 'Add manual item' }}</h2>
+        <form (ngSubmit)="saveRumi()">
+          <label>Name*
+            <input type="text" [(ngModel)]="rumiForm.name" name="rname" required autofocus />
+          </label>
+          <div class="row">
+            <label>From price (R)
+              <input type="number" min="0" [(ngModel)]="rumiForm.fromPrice" name="rprice" />
+            </label>
+            <label class="chk inline">
+              <input type="checkbox" [(ngModel)]="rumiForm.inStock" name="rstock" /> In stock
+            </label>
+          </div>
+          <label>Image URL
+            <input type="url" [(ngModel)]="rumiForm.imageUrl" name="rimg" placeholder="https://…" />
+          </label>
+          <label>Product link
+            <input type="url" [(ngModel)]="rumiForm.permalink" name="rlink" placeholder="https://rumifragrances.co.za/…" />
+          </label>
+          <label>Notes
+            <textarea rows="2" [(ngModel)]="rumiForm.notes" name="rnotes"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" (click)="rumiModalOpen.set(false)">Cancel</button>
+            <button type="submit" class="btn primary" [disabled]="!rumiForm.name.trim()">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- ============ CONFIRM ============ -->
+  @if (confirm(); as c) {
+    <div class="overlay" (click)="confirm.set(null)">
+      <div class="modal small" (click)="$event.stopPropagation()">
+        <h2>Are you sure?</h2>
+        <p class="confirm-msg">{{ c.message }}</p>
+        <div class="modal-actions">
+          <button class="btn" (click)="confirm.set(null)">Cancel</button>
+          <button class="btn danger" (click)="runConfirm()">Delete</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ============ TOAST ============ -->
+  @if (toast(); as t) { <div class="toast">{{ t }}</div> }
+</div>
