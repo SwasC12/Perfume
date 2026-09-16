@@ -54,6 +54,7 @@ body {
 }
 .brand h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
 .brand .sub { margin: 2px 0 0; font-size: 13px; color: var(--ink-dim); }
+.top-right { display: flex; align-items: center; gap: 10px; }
 .low-pill {
   background: var(--warn-soft);
   color: var(--warn);
@@ -62,6 +63,41 @@ body {
   padding: 6px 12px;
   border-radius: 999px;
 }
+.sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.sync-btn .dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  flex: none;
+}
+.sync-btn .dot.on { background: var(--ok); }
+.sync-btn .dot.busy { background: var(--warn); animation: pulse 1s ease infinite; }
+.sync-btn .dot.err { background: var(--danger); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+.sync-state { font-size: 13px; color: var(--ink-dim); margin: -4px 0 14px; }
+.sync-state code, .confirm-msg code {
+  background: var(--bg2);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.modal-actions.between { justify-content: space-between; align-items: center; }
+.modal-actions .right-group { display: flex; gap: 10px; }
+.btn.ghost { background: transparent; }
 
 /* ---------- Tabs ---------- */
 .tabs {

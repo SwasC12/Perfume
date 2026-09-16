@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
+import { SyncService } from './sync.service';
 import { Oil, RumiProduct } from './models';
 
 type Tab = 'oils' | 'rumi';
@@ -33,6 +34,7 @@ interface RumiForm {
 export class AppComponent {
   readonly oilsSvc = inject(OilsService);
   readonly rumiSvc = inject(RumiService);
+  readonly syncSvc = inject(SyncService);
 
   readonly tab = signal<Tab>('oils');
   readonly oilSearch = signal('');
@@ -48,6 +50,10 @@ export class AppComponent {
   rumiModalOpen = signal(false);
   editingRumiId: string | null = null;
   rumiForm: RumiForm = this.emptyRumiForm();
+
+  // ---- Sync ----
+  syncModalOpen = signal(false);
+  syncCodeInput = '';
 
   // ---- Confirm + toast ----
   confirm = signal<{ message: string; action: () => void } | null>(null);
@@ -189,6 +195,42 @@ export class AppComponent {
       notes: p.permalink ? `From Rumi: ${p.permalink}` : undefined,
     });
     this.showToast('Added to My Oils');
+  }
+
+  // ---------- Sync ----------
+  openSync(): void {
+    this.syncCodeInput = this.syncSvc.code() ?? '';
+    this.syncModalOpen.set(true);
+  }
+
+  async connectSync(): Promise<void> {
+    const code = this.syncCodeInput.trim();
+    if (!code) return;
+    if (code.length < 6) {
+      this.showToast('Use a code of at least 6 characters');
+      return;
+    }
+    await this.syncSvc.connect(code);
+    this.showToast(this.syncSvc.status() === 'synced' ? 'Syncing across devices' : 'Sync failed');
+  }
+
+  generateSync(): void {
+    this.syncCodeInput = this.syncSvc.generateCode();
+  }
+
+  disconnectSync(): void {
+    this.syncSvc.disconnect();
+    this.syncCodeInput = '';
+    this.showToast('Sync turned off');
+  }
+
+  syncStatusLabel(): string {
+    switch (this.syncSvc.status()) {
+      case 'synced': return 'Synced';
+      case 'connecting': return 'Connecting…';
+      case 'error': return 'Sync error';
+      default: return 'Not syncing';
+    }
   }
 
   // ---------- Confirm ----------

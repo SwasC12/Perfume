@@ -7,9 +7,17 @@
         <p class="sub">Your stash &amp; what's fresh at Rumi</p>
       </div>
     </div>
-    @if (oilsSvc.lowCount() > 0) {
-      <span class="low-pill" title="Oils running low">{{ oilsSvc.lowCount() }} low</span>
-    }
+    <div class="top-right">
+      @if (oilsSvc.lowCount() > 0) {
+        <span class="low-pill" title="Oils running low">{{ oilsSvc.lowCount() }} low</span>
+      }
+      <button class="sync-btn" (click)="openSync()" [attr.title]="syncStatusLabel()">
+        <span class="dot" [class.on]="syncSvc.status() === 'synced'"
+              [class.busy]="syncSvc.status() === 'connecting'"
+              [class.err]="syncSvc.status() === 'error'"></span>
+        {{ syncSvc.status() === 'synced' ? 'Synced' : 'Sync' }}
+      </button>
+    </div>
   </header>
 
   <nav class="tabs">
@@ -218,6 +226,51 @@
             <button type="submit" class="btn primary" [disabled]="!rumiForm.name.trim()">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+  }
+
+  <!-- ============ SYNC MODAL ============ -->
+  @if (syncModalOpen()) {
+    <div class="overlay" (click)="syncModalOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>Sync across devices</h2>
+        @if (!syncSvc.configured) {
+          <p class="confirm-msg">
+            Firebase isn't set up yet. Add your project config in
+            <code>src/app/firebase.config.ts</code> and follow the README, then
+            redeploy — this panel will let you turn on sync.
+          </p>
+          <div class="modal-actions">
+            <button class="btn" (click)="syncModalOpen.set(false)">Close</button>
+          </div>
+        } @else {
+          <p class="confirm-msg">
+            Enter the same <strong>sync code</strong> on every device (phone, tablet,
+            laptop) to share one list. No login — anyone with the code sees this data,
+            so keep it private.
+          </p>
+          <p class="sync-state">
+            Status: <strong>{{ syncStatusLabel() }}</strong>
+            @if (syncSvc.code()) { · code <code>{{ syncSvc.code() }}</code> }
+          </p>
+          <label>Sync code
+            <input type="text" [(ngModel)]="syncCodeInput" name="synccode"
+                   placeholder="e.g. musk-vault" autocomplete="off" />
+          </label>
+          <div class="modal-actions between">
+            <button type="button" class="btn ghost" (click)="generateSync()">🎲 Generate</button>
+            <div class="right-group">
+              @if (syncSvc.code()) {
+                <button type="button" class="btn" (click)="disconnectSync()">Turn off</button>
+              }
+              <button type="button" class="btn primary" (click)="connectSync()"
+                      [disabled]="!syncCodeInput.trim() || syncSvc.status() === 'connecting'">
+                {{ syncSvc.code() ? 'Reconnect' : 'Connect' }}
+              </button>
+            </div>
+          </div>
+        }
       </div>
     </div>
   }

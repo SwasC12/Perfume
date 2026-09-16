@@ -16,12 +16,50 @@ offline and as an installed app.
   in stock, add items manually, edit, delete, open on Rumi, or "＋" straight into My Oils.
 - Clean UI with loaders, skeletons, image cards, search, and empty states.
 
+- **Sync across devices** — optional Firebase (Firestore) sync. Enter the same
+  **sync code** on your phone, tablet, and laptop to share one live dataset. No
+  login: anyone with the code sees that data, so keep it private. Works offline and
+  catches up when back online.
+
 ## Tech
 
 - Angular 19 (standalone + signals), SCSS
-- localStorage persistence
+- localStorage persistence (offline cache + single-device default)
+- Firebase Firestore for optional cross-device sync (real-time)
 - Vercel serverless function (`/api/rumi-stock`) that proxies Rumi's WooCommerce
   Store API (avoids browser CORS)
+
+## Enable cross-device sync (Firebase)
+
+Sync is off until you add a Firebase project. It's free and takes ~5 minutes:
+
+1. Go to <https://console.firebase.google.com> → **Add project** (no billing needed).
+2. Inside the project, click the **Web** icon (`</>`) to register a web app, then
+   copy the `firebaseConfig` object it shows.
+3. Paste those values into **`src/app/firebase.config.ts`** (replace the `PASTE_...`
+   placeholders).
+4. **Build → Firestore Database → Create database** → *Production mode*.
+5. Open the **Rules** tab, paste the rules below, and **Publish**:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /workspaces/{code} {
+         allow get, write: if code.size() >= 6; // knowing the code = access
+         allow list: if false;                  // can't enumerate other codes
+       }
+     }
+   }
+   ```
+
+6. Commit + push → Vercel redeploys. Open the app, click **Sync** in the header,
+   **Generate** (or type) a code of 6+ characters, and **Connect**. Enter the *same*
+   code on your other devices.
+
+> The sync code is the only thing protecting your data — treat it like a password.
+> The Firebase web config is safe to commit (it's public by design); the Firestore
+> rules above are what actually gate access.
 
 ## Run locally
 
