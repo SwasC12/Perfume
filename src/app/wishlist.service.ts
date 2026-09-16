@@ -52,4 +52,9 @@ export class WishlistService {
   remove(id: string): void {
     this.items.update((list) => list.filter((i) => i.id !== id));
   }
+
+  removeByName(name: string): void {
+    const n = name.trim().toLowerCase();
+    this.items.update((list) => list.filter((i) => i.name.trim().toLowerCase() !== n));
+  }
 }

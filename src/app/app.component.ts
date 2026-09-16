@@ -208,13 +208,14 @@ export class AppComponent {
     });
   }
 
-  addRumiToWishlist(p: RumiProduct): void {
+  toggleRumiWishlist(p: RumiProduct): void {
     if (this.wishSvc.has(p.name)) {
-      this.showToast('Already on your wishlist');
-      return;
+      this.wishSvc.removeByName(p.name);
+      this.showToast('Removed from wishlist');
+    } else {
+      this.wishSvc.addFromRumi(p);
+      this.showToast('Added to wishlist');
     }
-    this.wishSvc.addFromRumi(p);
-    this.showToast('Added to wishlist');
   }
 
   isOnWishlist(name: string): boolean {

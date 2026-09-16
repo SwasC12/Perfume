@@ -201,8 +201,8 @@
               </div>
               <div class="actions rumi-actions">
                 <button class="icon star" [class.active]="isOnWishlist(p.name)"
-                        [title]="isOnWishlist(p.name) ? 'On your wishlist' : 'Add to wishlist'"
-                        (click)="addRumiToWishlist(p)">
+                        [title]="isOnWishlist(p.name) ? 'Remove from wishlist' : 'Add to wishlist'"
+                        (click)="toggleRumiWishlist(p)">
                   <app-icon name="star" [size]="20" [filled]="isOnWishlist(p.name)" />
                 </button>
                 <div class="icon-group">
