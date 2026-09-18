@@ -29,7 +29,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth != null && request.auth.uid == 'PASTE_ADMIN_UID';
+      return request.auth != null && request.auth.uid == 'iQjj1HHAUAM6BzWGcoYWepQCpRx2';
     }
 
     function isValidNewOrder() {
