@@ -22,6 +22,29 @@ offline and as an installed app.
   **sync code** on your phone, tablet, and laptop to share one live dataset. No
   login: anyone with the code sees that data, so keep it private. Works offline and
   catches up when back online.
+- **Products & Orders (admin)** — this app doubles as the admin for the
+  [Kauā Fragrances shop](https://github.com/SwasC12/kf-publicsite). Sign in
+  (Firebase Auth) to manage the `products` your shop sells (price, stock, image,
+  show/hide) and to see customer **orders** in real time — mark them paid /
+  fulfilled / cancelled. These two tabs are gated behind the admin login; the rest
+  of the app stays login-free.
+
+## Shop admin setup (one-time)
+
+The Products/Orders tabs and the storefront both need Firestore rules + an admin
+login. Do this once:
+
+1. **Enable admin login:** Firebase console → **Authentication** → Sign-in method →
+   enable **Email/Password**. Then **Users → Add user** (your email + a password)
+   and copy the **User UID**.
+2. **Publish the rules:** open [`firestore.rules`](./firestore.rules), replace
+   `PASTE_ADMIN_UID` with that UID, and paste the whole file into console →
+   **Firestore Database → Rules → Publish**.
+3. **Authorize the admin domain:** Authentication → Settings → Authorized domains →
+   add your deployed admin URL (e.g. `perfume-xxxx.vercel.app`). `localhost` is
+   already allowed for local dev.
+4. In the app, click **Admin → Sign in**, then use the **Products** tab to add
+   fragrances — they appear on the shop immediately, and orders flow into **Orders**.
 
 ## Tech
 

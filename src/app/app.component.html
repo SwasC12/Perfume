@@ -17,6 +17,15 @@
               [class.err]="syncSvc.status() === 'error'"></span>
         {{ syncSvc.status() === 'synced' ? 'Synced' : 'Sync' }}
       </button>
+      @if (authSvc.isAdmin) {
+        <button class="sync-btn" (click)="doLogout()" title="Sign out of admin">
+          <app-icon name="log-out" [size]="15" /> Admin
+        </button>
+      } @else {
+        <button class="sync-btn" (click)="openAdminLogin()" title="Admin sign in">
+          <app-icon name="lock" [size]="15" /> Admin
+        </button>
+      }
     </div>
   </header>
 
@@ -29,6 +38,15 @@
     </button>
     <button [class.active]="tab() === 'rumi'" (click)="tab.set('rumi')">
       Buy from Rumi <span class="count">{{ rumiSvc.products().length }}</span>
+    </button>
+    <button [class.active]="tab() === 'products'" (click)="tab.set('products')">
+      Products @if (authSvc.isAdmin) { <span class="count">{{ shopSvc.products().length }}</span> }
+    </button>
+    <button [class.active]="tab() === 'orders'" (click)="tab.set('orders')">
+      Orders
+      @if (authSvc.isAdmin && shopSvc.pendingOrderCount() > 0) {
+        <span class="count alert">{{ shopSvc.pendingOrderCount() }}</span>
+      }
     </button>
   </nav>
 
@@ -220,6 +238,127 @@
     </section>
   }
 
+  <!-- ============ PRODUCTS (admin) ============ -->
+  @if (tab() === 'products') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to manage the fragrances that appear on your Kau&#257; Fragrances shop.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="toolbar">
+          <input class="search" type="search" placeholder="Search products…"
+                 [ngModel]="productSearch()" (ngModelChange)="productSearch.set($event)" />
+          <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
+        </div>
+
+        @if (filteredProducts().length === 0) {
+          <div class="empty">
+            <app-icon name="package" [size]="40" />
+            <h3>{{ productSearch() ? 'No matches' : 'No products yet' }}</h3>
+            <p>Add the fragrances you sell — they'll appear on your shop instantly.</p>
+            @if (!productSearch()) { <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add your first product</button> }
+          </div>
+        } @else {
+          <div class="grid">
+            @for (p of filteredProducts(); track p.id) {
+              <article class="card" [class.oos]="!p.active">
+                <div class="thumb">
+                  @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" /> }
+                  @else { <span class="thumb-fallback"><app-icon name="package" [size]="40" /></span> }
+                  <span class="badge" [class.ok]="p.inStock" [class.warn]="!p.inStock">{{ p.inStock ? 'In stock' : 'Out' }}</span>
+                  @if (!p.active) { <span class="badge manual">Hidden</span> }
+                </div>
+                <div class="body">
+                  <h3 class="name">{{ p.name }}</h3>
+                  <p class="meta"><strong>{{ price(p.price) }}</strong>
+                    @if (p.size) { <span class="dim"> · {{ p.size }}</span> }
+                    @if (p.stockQty != null) { <span class="dim"> · {{ p.stockQty }} in stock</span> }
+                  </p>
+                  @if (p.description) { <p class="notes">{{ p.description }}</p> }
+                </div>
+                <div class="actions rumi-actions">
+                  <button class="mini-btn" (click)="toggleProductActive(p)">{{ p.active ? 'Hide' : 'Show' }}</button>
+                  <div class="icon-group">
+                    <button class="icon" title="Edit" (click)="openEditProduct(p)"><app-icon name="edit" [size]="17" /></button>
+                    <button class="icon" title="Delete" (click)="askDeleteProduct(p)"><app-icon name="trash" [size]="17" /></button>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        }
+      }
+    </section>
+  }
+
+  <!-- ============ ORDERS (admin) ============ -->
+  @if (tab() === 'orders') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to see and manage customer orders from your shop.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="order-filters">
+          @for (f of ['all','pending','paid','fulfilled','cancelled']; track f) {
+            <button class="chip" [class.active]="orderFilter() === f" (click)="orderFilter.set($any(f))">{{ f }}</button>
+          }
+        </div>
+
+        @if (shopSvc.loadingOrders() && shopSvc.orders().length === 0) {
+          <div class="notice">Loading orders…</div>
+        } @else if (filteredOrders().length === 0) {
+          <div class="empty">
+            <app-icon name="receipt" [size]="40" />
+            <h3>No orders</h3>
+            <p>{{ orderFilter() === 'all' ? 'Orders placed on your shop will appear here in real time.' : 'No ' + orderFilter() + ' orders.' }}</p>
+          </div>
+        } @else {
+          <div class="orders">
+            @for (o of filteredOrders(); track o.id) {
+              <article class="order-card" [attr.data-status]="o.status">
+                <div class="order-head">
+                  <div>
+                    <span class="order-ref">{{ o.reference }}</span>
+                    <span class="order-date">{{ orderDate(o.createdAt) }}</span>
+                  </div>
+                  <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+                </div>
+                <div class="order-customer">
+                  <strong>{{ o.customer.name }}</strong>
+                  <a [href]="'mailto:' + o.customer.email">{{ o.customer.email }}</a>
+                  <a [href]="'tel:' + o.customer.phone">{{ o.customer.phone }}</a>
+                  @if (o.customer.note) { <span class="order-note">"{{ o.customer.note }}"</span> }
+                </div>
+                <ul class="order-items">
+                  @for (i of o.items; track i.productId) {
+                    <li><span>{{ i.qty }} × {{ i.name }}@if (i.size) { <span class="dim"> ({{ i.size }})</span> }</span><span>{{ price(i.price * i.qty) }}</span></li>
+                  }
+                </ul>
+                <div class="order-foot">
+                  <span class="order-total">Total {{ price(o.total) }}</span>
+                  <div class="order-actions">
+                    @if (o.status === 'pending') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'paid')">Mark paid</button> }
+                    @if (o.status === 'paid') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'fulfilled')">Mark fulfilled</button> }
+                    @if (o.status !== 'cancelled' && o.status !== 'fulfilled') { <button class="mini-btn" (click)="setOrderStatus(o, 'cancelled')">Cancel</button> }
+                    <button class="icon" title="Delete order" (click)="askDeleteOrder(o)"><app-icon name="trash" [size]="17" /></button>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        }
+      }
+    </section>
+  }
+
   <!-- ============ OIL MODAL ============ -->
   @if (oilModalOpen()) {
     <div class="overlay" (click)="oilModalOpen.set(false)">
@@ -361,6 +500,74 @@
             </div>
           </div>
         }
+      </div>
+    </div>
+  }
+
+  <!-- ============ ADMIN LOGIN MODAL ============ -->
+  @if (adminLoginOpen()) {
+    <div class="overlay" (click)="adminLoginOpen.set(false)">
+      <div class="modal small" (click)="$event.stopPropagation()">
+        <h2>Admin sign in</h2>
+        @if (!authSvc.configured) {
+          <p class="confirm-msg">Firebase isn't configured yet — see the README.</p>
+          <div class="modal-actions"><button class="btn" (click)="adminLoginOpen.set(false)">Close</button></div>
+        } @else {
+          <form (ngSubmit)="doLogin()">
+            <label>Email
+              <input type="email" [(ngModel)]="loginEmail" name="lemail" autocomplete="username" required autofocus />
+            </label>
+            <label>Password
+              <input type="password" [(ngModel)]="loginPassword" name="lpass" autocomplete="current-password" required />
+            </label>
+            @if (authSvc.error()) { <p class="form-error">{{ authSvc.error() }}</p> }
+            <div class="modal-actions">
+              <button type="button" class="btn" (click)="adminLoginOpen.set(false)">Cancel</button>
+              <button type="submit" class="btn primary" [disabled]="authSvc.busy() || !loginEmail.trim() || !loginPassword">
+                {{ authSvc.busy() ? 'Signing in…' : 'Sign in' }}
+              </button>
+            </div>
+          </form>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ============ PRODUCT MODAL ============ -->
+  @if (productModalOpen()) {
+    <div class="overlay" (click)="productModalOpen.set(false)">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>{{ editingProductId ? 'Edit product' : 'Add product' }}</h2>
+        <form (ngSubmit)="saveProduct()">
+          <label>Name*
+            <input type="text" [(ngModel)]="productForm.name" name="pname" required autofocus />
+          </label>
+          <div class="row">
+            <label>Price (R)*
+              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.price" name="pprice" required />
+            </label>
+            <label>Size
+              <input type="text" [(ngModel)]="productForm.size" name="psize" placeholder="e.g. 50ml" />
+            </label>
+          </div>
+          <label>Stock quantity (optional)
+            <input type="number" min="0" [(ngModel)]="productForm.stockQty" name="pqty" placeholder="leave blank if not tracking" />
+          </label>
+          <label>Image URL
+            <input type="url" [(ngModel)]="productForm.imageUrl" name="pimg" placeholder="https://…" />
+          </label>
+          <label>Description
+            <textarea rows="2" [(ngModel)]="productForm.description" name="pdesc"></textarea>
+          </label>
+          <div class="row">
+            <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.inStock" name="pinstock" /> In stock</label>
+            <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.active" name="pactive" /> Show on shop</label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn" (click)="productModalOpen.set(false)">Cancel</button>
+            <button type="submit" class="btn primary" [disabled]="!productForm.name.trim()">Save</button>
+          </div>
+        </form>
       </div>
     </div>
   }

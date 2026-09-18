@@ -1,16 +1,13 @@
 import { Injectable, effect, inject, signal } from '@angular/core';
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import {
-  initializeFirestore,
   doc,
   getDoc,
   setDoc,
   onSnapshot,
-  Firestore,
   DocumentReference,
   Unsubscribe,
 } from 'firebase/firestore';
-import { firebaseConfig, isFirebaseConfigured } from './firebase.config';
+import { getDb, isFirebaseConfigured } from './firebase';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
 import { WishlistService } from './wishlist.service';
@@ -49,8 +46,7 @@ export class SyncService {
   readonly code = signal<string | null>(localStorage.getItem(CODE_KEY));
   readonly status = signal<SyncStatus>('off');
 
-  private app?: FirebaseApp;
-  private db?: Firestore;
+  private db = this.configured ? getDb() : undefined;
   private unsub?: Unsubscribe;
   private docRef?: DocumentReference;
   private applyingRemote = false;
@@ -59,9 +55,6 @@ export class SyncService {
 
   constructor() {
     if (this.configured) {
-      this.app = getApps()[0] ?? initializeApp(firebaseConfig);
-      // ignoreUndefinedProperties lets us store our optional fields (notes, imageUrl…).
-      this.db = initializeFirestore(this.app, { ignoreUndefinedProperties: true });
       const existing = this.code();
       if (existing) void this.connect(existing);
     }

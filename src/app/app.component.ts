@@ -1,13 +1,15 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
 import { WishlistService } from './wishlist.service';
 import { SyncService } from './sync.service';
+import { AuthService } from './auth.service';
+import { ShopAdminService } from './shop-admin.service';
 import { IconComponent } from './icon.component';
-import { Oil, RumiProduct, WishlistItem } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders';
 
 interface OilForm {
   name: string;
@@ -35,6 +37,17 @@ interface WishForm {
   notes: string;
 }
 
+interface ProductForm {
+  name: string;
+  description: string;
+  size: string;
+  price: number | null;
+  stockQty: number | null;
+  inStock: boolean;
+  active: boolean;
+  imageUrl: string;
+}
+
 @Component({
   selector: 'app-root',
   imports: [FormsModule, IconComponent],
@@ -46,12 +59,34 @@ export class AppComponent {
   readonly rumiSvc = inject(RumiService);
   readonly wishSvc = inject(WishlistService);
   readonly syncSvc = inject(SyncService);
+  readonly authSvc = inject(AuthService);
+  readonly shopSvc = inject(ShopAdminService);
 
   readonly tab = signal<Tab>('oils');
   readonly oilSearch = signal('');
   readonly wishSearch = signal('');
   readonly rumiSearch = signal('');
   readonly rumiInStockOnly = signal(false);
+  readonly productSearch = signal('');
+  readonly orderFilter = signal<'all' | OrderStatus>('all');
+
+  // ---- Admin auth ----
+  adminLoginOpen = signal(false);
+  loginEmail = '';
+  loginPassword = '';
+
+  // ---- Product modal ----
+  productModalOpen = signal(false);
+  editingProductId: string | null = null;
+  productForm: ProductForm = this.emptyProductForm();
+
+  constructor() {
+    // Start/stop the shop's live listeners with the admin session.
+    effect(() => {
+      if (this.authSvc.isAdmin) this.shopSvc.start();
+      else this.shopSvc.stop();
+    });
+  }
 
   // ---- Oil modal ----
   oilModalOpen = signal(false);
@@ -97,6 +132,18 @@ export class AppComponent {
       .filter((p) => (inStockOnly ? p.inStock : true))
       .filter((p) => (q ? p.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  readonly filteredProducts = computed<Product[]>(() => {
+    const q = this.productSearch().trim().toLowerCase();
+    const list = this.shopSvc.products();
+    return q ? list.filter((p) => p.name.toLowerCase().includes(q)) : list;
+  });
+
+  readonly filteredOrders = computed<Order[]>(() => {
+    const f = this.orderFilter();
+    const list = this.shopSvc.orders();
+    return f === 'all' ? list : list.filter((o) => o.status === f);
   });
 
   // ---------- Oils ----------
@@ -321,6 +368,130 @@ export class AppComponent {
     }
   }
 
+  // ---------- Admin auth ----------
+  openAdminLogin(): void {
+    this.loginEmail = '';
+    this.loginPassword = '';
+    this.authSvc.error.set(null);
+    this.adminLoginOpen.set(true);
+  }
+
+  async doLogin(): Promise<void> {
+    if (!this.loginEmail.trim() || !this.loginPassword) return;
+    const ok = await this.authSvc.signIn(this.loginEmail, this.loginPassword);
+    if (ok) {
+      this.adminLoginOpen.set(false);
+      this.showToast('Signed in');
+    }
+  }
+
+  doLogout(): void {
+    this.confirm.set({
+      message: 'Sign out of the admin?',
+      action: async () => {
+        await this.authSvc.signOut();
+        if (this.tab() === 'products' || this.tab() === 'orders') this.tab.set('oils');
+        this.showToast('Signed out');
+      },
+    });
+  }
+
+  // ---------- Products ----------
+  openAddProduct(): void {
+    this.editingProductId = null;
+    this.productForm = this.emptyProductForm();
+    this.productModalOpen.set(true);
+  }
+
+  openEditProduct(p: Product): void {
+    this.editingProductId = p.id;
+    this.productForm = {
+      name: p.name,
+      description: p.description ?? '',
+      size: p.size ?? '',
+      price: p.price,
+      stockQty: p.stockQty,
+      inStock: p.inStock,
+      active: p.active,
+      imageUrl: p.imageUrl ?? '',
+    };
+    this.productModalOpen.set(true);
+  }
+
+  async saveProduct(): Promise<void> {
+    const name = this.productForm.name.trim();
+    const price = this.numOrNull(this.productForm.price);
+    if (!name || price == null) {
+      this.showToast('Name and price are required');
+      return;
+    }
+    const payload = {
+      name,
+      description: this.productForm.description.trim() || undefined,
+      size: this.productForm.size.trim() || undefined,
+      price,
+      stockQty: this.numOrNull(this.productForm.stockQty),
+      inStock: this.productForm.inStock,
+      active: this.productForm.active,
+      imageUrl: this.productForm.imageUrl.trim() || undefined,
+    };
+    try {
+      if (this.editingProductId) {
+        await this.shopSvc.updateProduct(this.editingProductId, payload);
+        this.showToast('Product updated');
+      } else {
+        await this.shopSvc.addProduct(payload);
+        this.showToast('Product added');
+      }
+      this.productModalOpen.set(false);
+    } catch {
+      this.showToast('Save failed — are you signed in?');
+    }
+  }
+
+  async toggleProductActive(p: Product): Promise<void> {
+    try {
+      await this.shopSvc.updateProduct(p.id, { active: !p.active });
+      this.showToast(p.active ? 'Hidden from shop' : 'Now live on shop');
+    } catch {
+      this.showToast('Update failed');
+    }
+  }
+
+  askDeleteProduct(p: Product): void {
+    this.confirm.set({
+      message: `Delete "${p.name}" from the shop? This can't be undone.`,
+      action: async () => {
+        try { await this.shopSvc.deleteProduct(p.id); this.showToast('Product deleted'); }
+        catch { this.showToast('Delete failed'); }
+      },
+    });
+  }
+
+  // ---------- Orders ----------
+  async setOrderStatus(o: Order, status: OrderStatus): Promise<void> {
+    try {
+      await this.shopSvc.setOrderStatus(o.id, status);
+      this.showToast(`Order marked ${status}`);
+    } catch {
+      this.showToast('Update failed');
+    }
+  }
+
+  askDeleteOrder(o: Order): void {
+    this.confirm.set({
+      message: `Delete order ${o.reference}? This can't be undone.`,
+      action: async () => {
+        try { await this.shopSvc.deleteOrder(o.id); this.showToast('Order deleted'); }
+        catch { this.showToast('Delete failed'); }
+      },
+    });
+  }
+
+  orderDate(ms: number): string {
+    return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
   // ---------- Confirm ----------
   runConfirm(): void {
     const c = this.confirm();
@@ -377,5 +548,9 @@ export class AppComponent {
 
   private emptyWishForm(): WishForm {
     return { name: '', price: null, imageUrl: '', permalink: '', notes: '' };
+  }
+
+  private emptyProductForm(): ProductForm {
+    return { name: '', description: '', size: '', price: null, stockQty: null, inStock: true, active: true, imageUrl: '' };
   }
 }

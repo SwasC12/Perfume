@@ -102,6 +102,7 @@ body {
 /* ---------- Tabs ---------- */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   background: var(--surface);
   padding: 6px;
@@ -110,7 +111,8 @@ body {
   margin-bottom: 18px;
 }
 .tabs button {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 92px;
   border: 0;
   background: transparent;
   color: var(--ink-dim);
@@ -341,7 +343,7 @@ body {
   color: var(--ink-dim);
   margin-bottom: 12px;
 }
-.modal input[type="text"], .modal input[type="url"], .modal input[type="number"], .modal textarea {
+.modal input[type="text"], .modal input[type="url"], .modal input[type="number"], .modal input[type="email"], .modal input[type="password"], .modal textarea {
   width: 100%;
   margin-top: 5px;
   border: 1px solid var(--line);
@@ -383,3 +385,69 @@ body {
   .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .toolbar .btn { flex: 1; justify-content: center; }
 }
+
+/* ---------- Admin: shop products & orders ---------- */
+.count.alert { background: var(--danger); color: #fff; }
+.tabs button.active .count.alert { background: #fff; color: var(--danger); }
+.form-error { color: var(--danger); font-size: 13px; margin: -4px 0 12px; }
+.empty.gate .btn { margin-top: 4px; }
+
+.mini-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.mini-btn:hover { background: var(--bg2); }
+.mini-btn.ok { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+
+/* Order filters */
+.order-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chip {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+/* Order cards */
+.orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.order-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  border-left: 4px solid var(--line);
+}
+.order-card[data-status="pending"] { border-left-color: var(--warn); }
+.order-card[data-status="paid"] { border-left-color: #3b74c4; }
+.order-card[data-status="fulfilled"] { border-left-color: var(--ok); }
+.order-card[data-status="cancelled"] { border-left-color: var(--ink-dim); opacity: 0.72; }
+.order-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.order-ref { font-weight: 800; font-size: 16px; letter-spacing: 0.04em; }
+.order-date { font-size: 12px; color: var(--ink-dim); margin-left: 8px; }
+.status-pill {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 3px 9px; border-radius: 999px; background: var(--bg2); color: var(--ink-dim);
+}
+.status-pill[data-status="pending"] { background: var(--warn-soft); color: var(--warn); }
+.status-pill[data-status="paid"] { background: #e2ecfa; color: #3b74c4; }
+.status-pill[data-status="fulfilled"] { background: var(--ok-soft); color: var(--ok); }
+.order-customer { display: flex; flex-direction: column; gap: 2px; margin: 10px 0; font-size: 13.5px; }
+.order-customer a { color: var(--accent); text-decoration: none; }
+.order-note { color: var(--ink-dim); font-style: italic; margin-top: 2px; }
+.order-items { list-style: none; margin: 10px 0; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px; }
+.order-items li { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
+.order-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.order-total { font-weight: 800; }
+.order-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

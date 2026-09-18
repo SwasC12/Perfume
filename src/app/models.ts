@@ -34,6 +34,49 @@ export interface WishlistItem {
   updatedAt: number;
 }
 
+// ---- Shop (shared with the Kauā Fragrances storefront) ----
+export interface Product {
+  id: string;
+  name: string;
+  description?: string;
+  size?: string;
+  price: number;
+  stockQty: number | null;
+  inStock: boolean;
+  active: boolean;
+  imageUrl?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface OrderItem {
+  productId: string;
+  name: string;
+  size?: string;
+  price: number;
+  qty: number;
+}
+
+export interface OrderCustomer {
+  name: string;
+  email: string;
+  phone: string;
+  note?: string;
+}
+
+export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
+
+export interface Order {
+  id: string;
+  reference: string;
+  customer: OrderCustomer;
+  items: OrderItem[];
+  total: number;
+  status: OrderStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface RumiSyncResponse {
   products: RumiProduct[];
   count: number;
