@@ -6,10 +6,11 @@ import { WishlistService } from './wishlist.service';
 import { SyncService } from './sync.service';
 import { AuthService } from './auth.service';
 import { ShopAdminService } from './shop-admin.service';
+import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings';
 
 interface OilForm {
   name: string;
@@ -70,6 +71,7 @@ export class AppComponent {
   readonly syncSvc = inject(SyncService);
   readonly authSvc = inject(AuthService);
   readonly shopSvc = inject(ShopAdminService);
+  readonly emailSvc = inject(EmailService);
 
   readonly tab = signal<Tab>('oils');
   readonly oilSearch = signal('');
@@ -95,6 +97,14 @@ export class AppComponent {
   private contentLoaded = false;
   contentSaving = signal(false);
 
+  // ---- Store settings ----
+  settingsForm: StoreSettings = {};
+  private settingsLoaded = false;
+  settingsSaving = signal(false);
+
+  // ---- Order detail ----
+  selectedOrder = signal<Order | null>(null);
+
   constructor() {
     // Start/stop the shop's live listeners with the admin session.
     effect(() => {
@@ -110,7 +120,39 @@ export class AppComponent {
         this.contentLoaded = true;
       }
     });
+    // Load store settings into the editable form once they arrive.
+    effect(() => {
+      const s = this.shopSvc.settings();
+      if (s && !this.settingsLoaded) {
+        this.settingsForm = { ...this.defaultSettings(), ...JSON.parse(JSON.stringify(s)) };
+        this.settingsLoaded = true;
+      }
+    });
   }
+
+  // ---------- Dashboard ----------
+  private thisMonth(o: Order): boolean {
+    const d = new Date(o.createdAt); const n = new Date();
+    return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+  }
+  readonly kpiRevenueMonth = computed(() =>
+    this.shopSvc.orders().filter((o) => this.thisMonth(o) && o.status !== 'cancelled').reduce((s, o) => s + o.total, 0));
+  readonly kpiOrdersMonth = computed(() => this.shopSvc.orders().filter((o) => this.thisMonth(o)).length);
+  readonly kpiPending = computed(() => this.shopSvc.orders().filter((o) => o.status === 'pending').length);
+  readonly kpiPaid = computed(() => this.shopSvc.orders().filter((o) => o.status === 'paid').length);
+  readonly lowStock = computed(() => this.shopSvc.products().filter((p) => p.stockQty != null && p.stockQty <= 5));
+  readonly recentOrders = computed(() => this.shopSvc.orders().slice(0, 6));
+  readonly topProducts = computed(() => {
+    const tally = new Map<string, { name: string; qty: number }>();
+    for (const o of this.shopSvc.orders()) {
+      if (o.status === 'cancelled') continue;
+      for (const i of o.items) {
+        const e = tally.get(i.productId) ?? { name: i.name, qty: 0 };
+        e.qty += i.qty; tally.set(i.productId, e);
+      }
+    }
+    return [...tally.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
+  });
 
   // ---- Oil modal ----
   oilModalOpen = signal(false);
@@ -515,7 +557,8 @@ export class AppComponent {
   // ---------- Orders ----------
   async setOrderStatus(o: Order, status: OrderStatus): Promise<void> {
     try {
-      await this.shopSvc.setOrderStatus(o.id, status);
+      await this.shopSvc.setOrderStatus(o, status);
+      if (status === 'paid' || status === 'fulfilled') this.emailSvc.status(o, status);
       this.showToast(`Order marked ${status}`);
     } catch {
       this.showToast('Update failed');
@@ -565,6 +608,61 @@ export class AppComponent {
     const d = o.delivery;
     if (!d) return '';
     return [d.line1, d.line2, d.city, d.province, d.postalCode, d.country].filter(Boolean).join(', ');
+  }
+
+  orderDateTime(ms: number): string {
+    return new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ---------- Store settings ----------
+  private defaultSettings(): StoreSettings {
+    return {
+      storeOpen: true, deliveryEnabled: true, collectionEnabled: true,
+      deliveryFee: 60, freeDeliveryThreshold: 500,
+    };
+  }
+
+  async saveSettings(): Promise<void> {
+    this.settingsSaving.set(true);
+    try {
+      await this.shopSvc.saveStoreSettings(this.settingsForm);
+      this.showToast('Settings saved');
+    } catch {
+      this.showToast('Save failed — are you signed in?');
+    } finally {
+      this.settingsSaving.set(false);
+    }
+  }
+
+  // ---------- Order detail / export ----------
+  openOrderDetail(o: Order): void { this.selectedOrder.set(o); }
+  printInvoice(): void { setTimeout(() => window.print(), 50); }
+
+  exportOrdersCsv(): void {
+    const rows = [['Reference', 'Date', 'Status', 'Customer', 'Email', 'Phone', 'Method', 'Delivery', 'Items', 'Total']];
+    for (const o of this.shopSvc.orders()) {
+      rows.push([
+        o.reference,
+        new Date(o.createdAt).toISOString().slice(0, 10),
+        o.status,
+        o.customer?.name ?? '',
+        o.customer?.email ?? '',
+        o.customer?.phone ?? '',
+        o.deliveryMethod ?? '',
+        this.deliveryLine(o),
+        o.items.map((i) => `${i.qty}x ${i.name}${i.size ? ' (' + i.size + ')' : ''}`).join('; '),
+        String(o.total),
+      ]);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kaua-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.showToast('Orders exported');
   }
 
   // ---------- Confirm ----------

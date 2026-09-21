@@ -12,13 +12,14 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderStatus, Product, SiteContent } from './models';
+import { Order, OrderStatus, Product, SiteContent, StoreSettings } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
   readonly products = signal<Product[]>([]);
   readonly orders = signal<Order[]>([]);
   readonly siteContent = signal<SiteContent | null>(null);
+  readonly settings = signal<StoreSettings | null>(null);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -30,11 +31,18 @@ export class ShopAdminService {
   private unsubProducts?: Unsubscribe;
   private unsubOrders?: Unsubscribe;
   private unsubContent?: Unsubscribe;
+  private unsubSettings?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
     if (this.unsubProducts) return; // already started
     const db = getDb();
+
+    this.unsubSettings = onSnapshot(
+      doc(db, 'settings', 'store'),
+      (snap) => this.settings.set(snap.exists() ? (snap.data() as StoreSettings) : {}),
+      () => this.settings.set({}),
+    );
 
     this.unsubContent = onSnapshot(
       doc(db, 'siteContent', 'home'),
@@ -67,17 +75,25 @@ export class ShopAdminService {
     this.unsubProducts?.();
     this.unsubOrders?.();
     this.unsubContent?.();
+    this.unsubSettings?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
+    this.unsubSettings = undefined;
     this.products.set([]);
     this.orders.set([]);
     this.siteContent.set(null);
+    this.settings.set(null);
   }
 
   // ---- Site content (CMS) ----
   async saveSiteContent(data: SiteContent): Promise<void> {
     await setDoc(doc(getDb(), 'siteContent', 'home'), { ...data, updatedAt: Date.now() });
+  }
+
+  // ---- Store settings ----
+  async saveStoreSettings(data: StoreSettings): Promise<void> {
+    await setDoc(doc(getDb(), 'settings', 'store'), { ...data, updatedAt: Date.now() });
   }
 
   // ---- Products ----
@@ -95,8 +111,14 @@ export class ShopAdminService {
   }
 
   // ---- Orders ----
-  async setOrderStatus(id: string, status: OrderStatus): Promise<void> {
-    await updateDoc(doc(getDb(), 'orders', id), { status, updatedAt: Date.now() });
+  async setOrderStatus(order: Order, status: OrderStatus): Promise<void> {
+    const now = Date.now();
+    await updateDoc(doc(getDb(), 'orders', order.id), { status, updatedAt: now });
+    // Keep the public tracking doc in sync.
+    try {
+      await setDoc(doc(getDb(), 'orderStatus', order.reference),
+        { reference: order.reference, status, total: order.total, updatedAt: now }, { merge: true });
+    } catch { /* non-fatal */ }
   }
 
   async deleteOrder(id: string): Promise<void> {

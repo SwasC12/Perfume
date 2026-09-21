@@ -30,6 +30,9 @@
   </header>
 
   <nav class="tabs">
+    @if (authSvc.isAdmin) {
+      <button [class.active]="tab() === 'dashboard'" (click)="tab.set('dashboard')">Dashboard</button>
+    }
     <button [class.active]="tab() === 'oils'" (click)="tab.set('oils')">
       My Oils <span class="count">{{ oilsSvc.oils().length }}</span>
     </button>
@@ -49,6 +52,7 @@
       }
     </button>
     <button [class.active]="tab() === 'content'" (click)="tab.set('content')">Storefront</button>
+    <button [class.active]="tab() === 'settings'" (click)="tab.set('settings')">Settings</button>
   </nav>
 
   <!-- ============ MY OILS ============ -->
@@ -311,6 +315,9 @@
           @for (f of ['all','pending','paid','fulfilled','cancelled']; track f) {
             <button class="chip" [class.active]="orderFilter() === f" (click)="orderFilter.set($any(f))">{{ f }}</button>
           }
+          @if (shopSvc.orders().length) {
+            <button class="btn export-btn" (click)="exportOrdersCsv()">Export CSV</button>
+          }
         </div>
 
         @if (shopSvc.loadingOrders() && shopSvc.orders().length === 0) {
@@ -347,6 +354,7 @@
                 <div class="order-foot">
                   <span class="order-total">Total {{ price(o.total) }}</span>
                   <div class="order-actions">
+                    <button class="mini-btn" (click)="openOrderDetail(o)">Details</button>
                     @if (o.status === 'pending') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'paid')">Mark paid</button> }
                     @if (o.status === 'paid') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'fulfilled')">Mark fulfilled</button> }
                     @if (o.status !== 'cancelled' && o.status !== 'fulfilled') { <button class="mini-btn" (click)="setOrderStatus(o, 'cancelled')">Cancel</button> }
@@ -426,6 +434,119 @@
           <div class="editor-actions">
             <button class="btn primary big" (click)="saveContent()" [disabled]="contentSaving()">
               {{ contentSaving() ? 'Saving…' : 'Save storefront' }}
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ DASHBOARD (admin) ============ -->
+  @if (tab() === 'dashboard') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to see your shop dashboard.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-label">Revenue this month</span><span class="kpi-value">{{ price(kpiRevenueMonth()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Orders this month</span><span class="kpi-value">{{ kpiOrdersMonth() }}</span></div>
+          <div class="kpi"><span class="kpi-label">Awaiting payment</span><span class="kpi-value">{{ kpiPending() }}</span></div>
+          <div class="kpi"><span class="kpi-label">Paid, to fulfil</span><span class="kpi-value">{{ kpiPaid() }}</span></div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="editor-card">
+            <h3 class="editor-title">Recent orders</h3>
+            @if (recentOrders().length === 0) { <p class="editor-hint">No orders yet.</p> }
+            @for (o of recentOrders(); track o.id) {
+              <button class="dash-row" (click)="openOrderDetail(o); tab.set('orders')">
+                <span><strong>{{ o.reference }}</strong> · {{ o.customer.name }}</span>
+                <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+                <span>{{ price(o.total) }}</span>
+              </button>
+            }
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Low stock</h3>
+            @if (lowStock().length === 0) { <p class="editor-hint">Nothing low. 👍 (products with 5 or fewer show here)</p> }
+            @for (p of lowStock(); track p.id) {
+              <div class="dash-row"><span>{{ p.name }}</span><span class="dim">{{ p.stockQty }} left</span></div>
+            }
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Top sellers</h3>
+            @if (topProducts().length === 0) { <p class="editor-hint">No sales yet.</p> }
+            @for (t of topProducts(); track t.name) {
+              <div class="dash-row"><span>{{ t.name }}</span><span class="dim">{{ t.qty }} sold</span></div>
+            }
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ SETTINGS (admin) ============ -->
+  @if (tab() === 'settings') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to edit store settings.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="content-editor">
+          <div class="editor-card">
+            <h3 class="editor-title">Store status</h3>
+            <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.storeOpen" name="sOpen" /> Store open (accepting orders)</label>
+            <label>Closed message (shown when store is off)
+              <input type="text" [(ngModel)]="settingsForm.storeClosedMessage" name="sClosed" placeholder="Back soon!" /></label>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Delivery</h3>
+            <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.deliveryEnabled" name="sDel" /> Offer delivery</label>
+            <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.collectionEnabled" name="sCol" /> Offer collection</label>
+            <div class="row2">
+              <label>Delivery fee (R) <input type="number" min="0" [(ngModel)]="settingsForm.deliveryFee" name="sFee" /></label>
+              <label>Free delivery over (R) <input type="number" min="0" [(ngModel)]="settingsForm.freeDeliveryThreshold" name="sThr" placeholder="blank = never" /></label>
+            </div>
+            <label>Collection note <input type="text" [(ngModel)]="settingsForm.collectionNote" name="sColNote" placeholder="Where/how customers collect" /></label>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Contact &amp; WhatsApp</h3>
+            <label>WhatsApp number (international, digits only) <input type="text" [(ngModel)]="settingsForm.whatsappNumber" name="sWa" placeholder="27821234567" /></label>
+            <div class="row2">
+              <label>Contact email <input type="email" [(ngModel)]="settingsForm.contactEmail" name="sEmail" placeholder="hello@kauafragrances.co.za" /></label>
+              <label>Contact phone <input type="tel" [(ngModel)]="settingsForm.contactPhone" name="sPhone" /></label>
+            </div>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Banking (shown to customers for EFT)</h3>
+            <div class="row2">
+              <label>Account name <input type="text" [(ngModel)]="settingsForm.bankAccountName" name="bAName" placeholder="Kauā Fragrances" /></label>
+              <label>Bank <input type="text" [(ngModel)]="settingsForm.bankName" name="bName" /></label>
+            </div>
+            <div class="row2">
+              <label>Account number <input type="text" [(ngModel)]="settingsForm.bankAccountNumber" name="bNum" /></label>
+              <label>Branch code <input type="text" [(ngModel)]="settingsForm.bankBranchCode" name="bBr" /></label>
+            </div>
+            <label>Account type <input type="text" [(ngModel)]="settingsForm.bankAccountType" name="bType" placeholder="Cheque / Savings" /></label>
+          </div>
+
+          <div class="editor-actions">
+            <button class="btn primary big" (click)="saveSettings()" [disabled]="settingsSaving()">
+              {{ settingsSaving() ? 'Saving…' : 'Save settings' }}
             </button>
           </div>
         </div>
@@ -672,6 +793,62 @@
             <button type="submit" class="btn primary" [disabled]="!productForm.name.trim()">Save</button>
           </div>
         </form>
+      </div>
+    </div>
+  }
+
+  <!-- ============ ORDER DETAIL MODAL ============ -->
+  @if (selectedOrder(); as o) {
+    <div class="overlay" (click)="selectedOrder.set(null)">
+      <div class="modal invoice-modal" (click)="$event.stopPropagation()">
+        <div class="invoice-print">
+          <div class="inv-head">
+            <div>
+              <div class="inv-brand">KAUĀ FRAGRANCES</div>
+              <div class="inv-tag">one spray to last the day</div>
+            </div>
+            <div class="inv-meta">
+              <div><strong>{{ o.reference }}</strong></div>
+              <div>{{ orderDateTime(o.createdAt) }}</div>
+              <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+            </div>
+          </div>
+
+          <div class="inv-cols">
+            <div>
+              <div class="inv-label">Customer</div>
+              <div>{{ o.customer.name }}</div>
+              <div>{{ o.customer.email }}</div>
+              <div>{{ o.customer.phone }}</div>
+            </div>
+            <div>
+              <div class="inv-label">{{ o.deliveryMethod === 'collection' ? 'Collection' : 'Deliver to' }}</div>
+              <div>{{ deliveryLine(o) || (o.deliveryMethod === 'collection' ? 'Collection' : '—') }}</div>
+            </div>
+          </div>
+
+          @if (o.customer.note) { <p class="inv-note"><strong>Note:</strong> {{ o.customer.note }}</p> }
+
+          <table class="inv-table">
+            <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Line</th></tr></thead>
+            <tbody>
+              @for (i of o.items; track i.productId) {
+                <tr><td>{{ i.name }}@if (i.size) { <span class="dim"> ({{ i.size }})</span> }</td><td>{{ i.qty }}</td><td>{{ price(i.price) }}</td><td>{{ price(i.price * i.qty) }}</td></tr>
+              }
+            </tbody>
+          </table>
+          <div class="inv-totals">
+            @if (o.subtotal != null) { <div><span>Subtotal</span><span>{{ price(o.subtotal) }}</span></div> }
+            <div><span>{{ o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</span><span>{{ (o.deliveryFee || 0) === 0 ? 'Free' : price(o.deliveryFee!) }}</span></div>
+            <div class="inv-grand"><span>Total</span><span>{{ price(o.total) }}</span></div>
+          </div>
+          <p class="inv-foot">Payment by EFT · reference <strong>{{ o.reference }}</strong> · Kauā Fragrances</p>
+        </div>
+
+        <div class="modal-actions no-print">
+          <button class="btn" (click)="selectedOrder.set(null)">Close</button>
+          <button class="btn primary" (click)="printInvoice()">Print invoice</button>
+        </div>
       </div>
     </div>
   }

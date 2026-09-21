@@ -83,6 +83,7 @@ export interface Address {
 }
 
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
+export type DeliveryMethod = 'delivery' | 'collection';
 
 export interface Order {
   id: string;
@@ -90,11 +91,33 @@ export interface Order {
   uid?: string | null;
   customer: OrderCustomer;
   delivery?: Address;
+  deliveryMethod?: DeliveryMethod;
+  deliveryFee?: number;
+  subtotal?: number;
   items: OrderItem[];
   total: number;
   status: OrderStatus;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface StoreSettings {
+  storeOpen?: boolean;
+  storeClosedMessage?: string;
+  deliveryEnabled?: boolean;
+  collectionEnabled?: boolean;
+  deliveryFee?: number;
+  freeDeliveryThreshold?: number | null;
+  collectionNote?: string;
+  whatsappNumber?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankBranchCode?: string;
+  bankAccountType?: string;
+  updatedAt?: number;
 }
 
 export interface Banner {
