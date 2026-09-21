@@ -52,10 +52,10 @@ service cloud.firestore {
     //  - a signed-in customer may read their own orders;
     //  - only the admin can read all / update / delete.
     match /orders/{id} {
-      allow create: if isValidNewOrder() && (
+      allow create: if isAdmin() || (isValidNewOrder() && (
         request.resource.data.uid == null ||
         (request.auth != null && request.resource.data.uid == request.auth.uid)
-      );
+      ));
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.uid == request.auth.uid);
       allow update, delete: if isAdmin();

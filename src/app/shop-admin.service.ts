@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderStatus, Product, SiteContent, StoreSettings } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -94,6 +94,28 @@ export class ShopAdminService {
   // ---- Store settings ----
   async saveStoreSettings(data: StoreSettings): Promise<void> {
     await setDoc(doc(getDb(), 'settings', 'store'), { ...data, updatedAt: Date.now() });
+  }
+
+  // ---- POS (in-person sale) ----
+  async createPosOrder(data: {
+    items: OrderItem[]; subtotal: number; total: number;
+    customerName: string; paymentMethod: string; status: OrderStatus;
+  }): Promise<string> {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const reference = 'KF-' + Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const now = Date.now();
+    await addDoc(collection(getDb(), 'orders'), {
+      reference, uid: null, channel: 'pos', paymentMethod: data.paymentMethod,
+      customer: { name: data.customerName || 'Walk-in', email: '', phone: '' },
+      deliveryMethod: 'collection', deliveryFee: 0,
+      subtotal: data.subtotal, items: data.items, total: data.total,
+      status: data.status, createdAt: now, updatedAt: now,
+    });
+    try {
+      await setDoc(doc(getDb(), 'orderStatus', reference),
+        { reference, status: data.status, total: data.total, createdAt: now, updatedAt: now });
+    } catch { /* non-fatal */ }
+    return reference;
   }
 
   // ---- Products ----

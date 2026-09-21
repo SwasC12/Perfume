@@ -49,6 +49,7 @@ export interface Product {
   gallery?: string[];
   category?: string;
   gender?: string;
+  inspiredBy?: string;
   notesTop?: string;
   notesHeart?: string;
   notesBase?: string;
@@ -97,6 +98,8 @@ export interface Order {
   items: OrderItem[];
   total: number;
   status: OrderStatus;
+  channel?: 'online' | 'pos';
+  paymentMethod?: string; // cash | card | eft
   createdAt: number;
   updatedAt: number;
 }

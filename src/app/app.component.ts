@@ -10,7 +10,9 @@ import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos';
+
+interface PosLine { product: Product; qty: number; }
 
 interface OilForm {
   name: string;
@@ -52,6 +54,7 @@ interface ProductForm {
   galleryText: string; // one image URL per line
   category: string;
   gender: string;
+  inspiredBy: string;
   notesTop: string;
   notesHeart: string;
   notesBase: string;
@@ -74,6 +77,7 @@ export class AppComponent {
   readonly emailSvc = inject(EmailService);
 
   readonly tab = signal<Tab>('oils');
+  readonly menuOpen = signal(false);
   readonly oilSearch = signal('');
   readonly wishSearch = signal('');
   readonly rumiSearch = signal('');
@@ -105,6 +109,20 @@ export class AppComponent {
   // ---- Order detail ----
   selectedOrder = signal<Order | null>(null);
 
+  // ---- POS ----
+  readonly posCart = signal<PosLine[]>([]);
+  readonly posSearch = signal('');
+  posCustomer = '';
+  readonly posPayment = signal<'cash' | 'card' | 'eft'>('cash');
+
+  readonly posProducts = computed<Product[]>(() => {
+    const q = this.posSearch().trim().toLowerCase();
+    return this.shopSvc.products()
+      .filter((p) => p.active !== false)
+      .filter((p) => (q ? p.name.toLowerCase().includes(q) || (p.inspiredBy ?? '').toLowerCase().includes(q) : true));
+  });
+  readonly posSubtotal = computed(() => this.posCart().reduce((s, l) => s + this.effPrice(l.product) * l.qty, 0));
+
   constructor() {
     // Start/stop the shop's live listeners with the admin session.
     effect(() => {
@@ -128,6 +146,56 @@ export class AppComponent {
         this.settingsLoaded = true;
       }
     });
+  }
+
+  go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }
+
+  // ---------- POS ----------
+  effPrice(p: Product): number {
+    return p.salePrice != null && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
+  }
+  posAdd(p: Product): void {
+    this.posCart.update((list) => {
+      const ex = list.find((l) => l.product.id === p.id);
+      return ex ? list.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l)) : [...list, { product: p, qty: 1 }];
+    });
+  }
+  posSetQty(id: string, qty: number): void {
+    if (qty <= 0) { this.posCart.update((l) => l.filter((x) => x.product.id !== id)); return; }
+    this.posCart.update((l) => l.map((x) => (x.product.id === id ? { ...x, qty } : x)));
+  }
+  posClear(): void { this.posCart.set([]); this.posCustomer = ''; }
+
+  async posCheckout(): Promise<void> {
+    const lines = this.posCart();
+    if (!lines.length) return;
+    const items = lines.map((l) => ({ productId: l.product.id, name: l.product.name, size: l.product.size, price: this.effPrice(l.product), qty: l.qty }));
+    const subtotal = this.posSubtotal();
+    try {
+      const ref = await this.shopSvc.createPosOrder({
+        items, subtotal, total: subtotal, customerName: this.posCustomer.trim(),
+        paymentMethod: this.posPayment(), status: 'fulfilled',
+      });
+      this.showToast(`Sale recorded · ${ref}`);
+      this.posClear();
+    } catch {
+      this.showToast('Could not record sale — signed in?');
+    }
+  }
+
+  tabTitle(): string {
+    switch (this.tab()) {
+      case 'dashboard': return 'Dashboard';
+      case 'oils': return 'My Oils';
+      case 'wishlist': return 'Wishlist';
+      case 'rumi': return 'Buy from Rumi';
+      case 'products': return 'Products';
+      case 'orders': return 'Orders';
+      case 'content': return 'Storefront';
+      case 'settings': return 'Settings';
+      case 'pos': return 'Point of Sale';
+      default: return '';
+    }
   }
 
   // ---------- Dashboard ----------
@@ -485,6 +553,7 @@ export class AppComponent {
       galleryText: (p.gallery ?? []).join('\n'),
       category: p.category ?? '',
       gender: p.gender ?? '',
+      inspiredBy: p.inspiredBy ?? '',
       notesTop: p.notesTop ?? '',
       notesHeart: p.notesHeart ?? '',
       notesBase: p.notesBase ?? '',
@@ -516,6 +585,7 @@ export class AppComponent {
       gallery: gallery.length ? gallery : undefined,
       category: this.productForm.category.trim() || undefined,
       gender: this.productForm.gender.trim() || undefined,
+      inspiredBy: this.productForm.inspiredBy.trim() || undefined,
       notesTop: this.productForm.notesTop.trim() || undefined,
       notesHeart: this.productForm.notesHeart.trim() || undefined,
       notesBase: this.productForm.notesBase.trim() || undefined,
@@ -727,7 +797,7 @@ export class AppComponent {
     return {
       name: '', description: '', size: '', price: null, salePrice: null, stockQty: null,
       inStock: true, active: true, featured: false, imageUrl: '', galleryText: '',
-      category: '', gender: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
+      category: '', gender: '', inspiredBy: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
     };
   }
 }

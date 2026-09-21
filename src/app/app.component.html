@@ -1,59 +1,71 @@
-<div class="app">
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo"><app-icon name="droplet" [size]="26" /></span>
-      <div>
-        <h1>Oil Tracker</h1>
-        <p class="sub">Your stash &amp; what's fresh at Rumi</p>
-      </div>
+<div class="app-shell" [class.menu-open]="menuOpen()">
+  <div class="scrim" (click)="menuOpen.set(false)"></div>
+
+  <aside class="sidebar">
+    <div class="side-brand">
+      <span class="logo"><app-icon name="droplet" [size]="22" /></span>
+      <span class="side-title">Oil Tracker</span>
     </div>
-    <div class="top-right">
-      @if (oilsSvc.lowCount() > 0) {
-        <span class="low-pill" title="Oils running low">{{ oilsSvc.lowCount() }} low</span>
+
+    <nav class="side-nav">
+      @if (authSvc.isAdmin) {
+        <span class="nav-group">Shop</span>
+        <button class="nav-item" [class.active]="tab() === 'dashboard'" (click)="go('dashboard')">
+          <app-icon name="grid" [size]="18" /> Dashboard
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'pos'" (click)="go('pos')">
+          <app-icon name="tag" [size]="18" /> Point of Sale
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'orders'" (click)="go('orders')">
+          <app-icon name="receipt" [size]="18" /> Orders
+          @if (shopSvc.pendingOrderCount() > 0) { <span class="count alert">{{ shopSvc.pendingOrderCount() }}</span> }
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'products'" (click)="go('products')">
+          <app-icon name="package" [size]="18" /> Products <span class="count">{{ shopSvc.products().length }}</span>
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'content'" (click)="go('content')">
+          <app-icon name="store" [size]="18" /> Storefront
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'settings'" (click)="go('settings')">
+          <app-icon name="settings" [size]="18" /> Settings
+        </button>
       }
-      <button class="sync-btn" (click)="openSync()" [attr.title]="syncStatusLabel()">
+
+      <span class="nav-group">Personal</span>
+      <button class="nav-item" [class.active]="tab() === 'oils'" (click)="go('oils')">
+        <app-icon name="droplet" [size]="18" /> My Oils <span class="count">{{ oilsSvc.oils().length }}</span>
+        @if (oilsSvc.lowCount() > 0) { <span class="count alert">{{ oilsSvc.lowCount() }}</span> }
+      </button>
+      <button class="nav-item" [class.active]="tab() === 'wishlist'" (click)="go('wishlist')">
+        <app-icon name="star" [size]="18" /> Wishlist <span class="count">{{ wishSvc.items().length }}</span>
+      </button>
+      <button class="nav-item" [class.active]="tab() === 'rumi'" (click)="go('rumi')">
+        <app-icon name="bag" [size]="18" /> Buy from Rumi <span class="count">{{ rumiSvc.products().length }}</span>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <button class="side-action" (click)="openSync()" [attr.title]="syncStatusLabel()">
         <span class="dot" [class.on]="syncSvc.status() === 'synced'"
               [class.busy]="syncSvc.status() === 'connecting'"
               [class.err]="syncSvc.status() === 'error'"></span>
         {{ syncSvc.status() === 'synced' ? 'Synced' : 'Sync' }}
       </button>
       @if (authSvc.isAdmin) {
-        <button class="sync-btn" (click)="doLogout()" title="Sign out of admin">
-          <app-icon name="log-out" [size]="15" /> Admin
-        </button>
+        <button class="side-action" (click)="doLogout()"><app-icon name="log-out" [size]="16" /> Sign out</button>
       } @else {
-        <button class="sync-btn" (click)="openAdminLogin()" title="Admin sign in">
-          <app-icon name="lock" [size]="15" /> Admin
-        </button>
+        <button class="side-action" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Admin sign in</button>
       }
     </div>
-  </header>
+  </aside>
 
-  <nav class="tabs">
-    @if (authSvc.isAdmin) {
-      <button [class.active]="tab() === 'dashboard'" (click)="tab.set('dashboard')">Dashboard</button>
-    }
-    <button [class.active]="tab() === 'oils'" (click)="tab.set('oils')">
-      My Oils <span class="count">{{ oilsSvc.oils().length }}</span>
-    </button>
-    <button [class.active]="tab() === 'wishlist'" (click)="tab.set('wishlist')">
-      Wishlist <span class="count">{{ wishSvc.items().length }}</span>
-    </button>
-    <button [class.active]="tab() === 'rumi'" (click)="tab.set('rumi')">
-      Buy from Rumi <span class="count">{{ rumiSvc.products().length }}</span>
-    </button>
-    <button [class.active]="tab() === 'products'" (click)="tab.set('products')">
-      Products @if (authSvc.isAdmin) { <span class="count">{{ shopSvc.products().length }}</span> }
-    </button>
-    <button [class.active]="tab() === 'orders'" (click)="tab.set('orders')">
-      Orders
-      @if (authSvc.isAdmin && shopSvc.pendingOrderCount() > 0) {
-        <span class="count alert">{{ shopSvc.pendingOrderCount() }}</span>
-      }
-    </button>
-    <button [class.active]="tab() === 'content'" (click)="tab.set('content')">Storefront</button>
-    <button [class.active]="tab() === 'settings'" (click)="tab.set('settings')">Settings</button>
-  </nav>
+  <div class="admin-main">
+    <header class="topbar-mobile">
+      <button class="hamburger" (click)="menuOpen.set(!menuOpen())" aria-label="Menu"><app-icon name="menu" [size]="22" /></button>
+      <span class="mobile-title">{{ tabTitle() }}</span>
+    </header>
+
+    <div class="content">
 
   <!-- ============ MY OILS ============ -->
   @if (tab() === 'oils') {
@@ -554,6 +566,78 @@
     </section>
   }
 
+  <!-- ============ POS (admin) ============ -->
+  @if (tab() === 'pos') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to use the point of sale.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="pos">
+          <div class="pos-picker">
+            <input class="search" type="search" placeholder="Search products to add…"
+                   [ngModel]="posSearch()" (ngModelChange)="posSearch.set($event)" />
+            @if (posProducts().length === 0) {
+              <p class="editor-hint">No products. Add products first, or adjust your search.</p>
+            } @else {
+              <div class="pos-grid">
+                @for (p of posProducts(); track p.id) {
+                  <button class="pos-prod" (click)="posAdd(p)">
+                    <div class="pos-prod-thumb">
+                      @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" /> }
+                      @else { <app-icon name="package" [size]="26" /> }
+                    </div>
+                    <span class="pos-prod-name">{{ p.name }}</span>
+                    <span class="pos-prod-price">{{ price(effPrice(p)) }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+
+          <aside class="pos-cart">
+            <h3 class="editor-title">Current sale</h3>
+            @if (posCart().length === 0) {
+              <p class="editor-hint">Tap products to add them to the sale.</p>
+            } @else {
+              <div class="pos-lines">
+                @for (l of posCart(); track l.product.id) {
+                  <div class="pos-line">
+                    <span class="pos-line-name">{{ l.product.name }}</span>
+                    <div class="qty-row small">
+                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty - 1)"><app-icon name="minus" [size]="14" /></button>
+                      <span class="qval">{{ l.qty }}</span>
+                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty + 1)"><app-icon name="plus" [size]="14" /></button>
+                    </div>
+                    <span class="pos-line-total">{{ price(effPrice(l.product) * l.qty) }}</span>
+                  </div>
+                }
+              </div>
+              <label class="pos-field">Customer (optional)
+                <input type="text" [(ngModel)]="posCustomer" name="posCust" placeholder="Walk-in" />
+              </label>
+              <div class="pos-pay">
+                @for (m of ['cash','card','eft']; track m) {
+                  <button class="chip" [class.active]="posPayment() === m" (click)="posPayment.set($any(m))">{{ m }}</button>
+                }
+              </div>
+              <div class="pos-total"><span>Total</span><strong>{{ price(posSubtotal()) }}</strong></div>
+              <button class="btn primary big" (click)="posCheckout()">Complete sale</button>
+              <button class="btn" (click)="posClear()">Clear</button>
+            }
+          </aside>
+        </div>
+      }
+    </section>
+  }
+
+    </div><!-- /.content -->
+  </div><!-- /.admin-main -->
+
   <!-- ============ OIL MODAL ============ -->
   @if (oilModalOpen()) {
     <div class="overlay" (click)="oilModalOpen.set(false)">
@@ -766,6 +850,9 @@
               <input type="text" [(ngModel)]="productForm.gender" name="pgen" placeholder="Men / Women / Unisex" />
             </label>
           </div>
+          <label>Inspired by (smells like)
+            <input type="text" [(ngModel)]="productForm.inspiredBy" name="pinsp" placeholder="e.g. Tom Ford Oud Wood" />
+          </label>
           <label>Main image URL
             <input type="url" [(ngModel)]="productForm.imageUrl" name="pimg" placeholder="https://…" />
           </label>
