@@ -23,6 +23,12 @@
         <button class="nav-item" [class.active]="tab() === 'products'" (click)="go('products')">
           <app-icon name="package" [size]="18" /> Products <span class="count">{{ shopSvc.products().length }}</span>
         </button>
+        <button class="nav-item" [class.active]="tab() === 'customers'" (click)="go('customers')">
+          <app-icon name="user" [size]="18" /> Customers <span class="count">{{ shopSvc.customers().length }}</span>
+        </button>
+        <button class="nav-item" [class.active]="tab() === 'discounts'" (click)="go('discounts')">
+          <app-icon name="tag" [size]="18" /> Discounts <span class="count">{{ shopSvc.discounts().length }}</span>
+        </button>
         <button class="nav-item" [class.active]="tab() === 'content'" (click)="go('content')">
           <app-icon name="store" [size]="18" /> Storefront
         </button>
@@ -503,6 +509,34 @@
             }
           </div>
         </div>
+
+        <div class="editor-card chart-card">
+          <h3 class="editor-title">Revenue · last 14 days</h3>
+          <div class="bar-chart" role="img" aria-label="Revenue for the last 14 days">
+            @for (d of revenueSeries(); track d.label) {
+              <div class="bar-col" [title]="d.label + ': ' + price(d.total)">
+                <div class="bar-track">
+                  <div class="bar-fill" [style.height.%]="d.total === 0 ? 0 : (d.total / revenueMax() * 100)"></div>
+                </div>
+                <span class="bar-label">{{ d.label }}</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        @if (channelSplit().total > 0) {
+          <div class="editor-card">
+            <h3 class="editor-title">Sales by channel</h3>
+            <div class="split-bar">
+              <div class="split online" [style.width.%]="channelSplit().online / channelSplit().total * 100"></div>
+              <div class="split pos" [style.width.%]="channelSplit().pos / channelSplit().total * 100"></div>
+            </div>
+            <div class="split-legend">
+              <span><i class="sw online"></i> Online {{ price(channelSplit().online) }}</span>
+              <span><i class="sw pos"></i> POS {{ price(channelSplit().pos) }}</span>
+            </div>
+          </div>
+        }
       }
     </section>
   }
@@ -633,6 +667,95 @@
               <button class="btn" (click)="posClear()">Clear</button>
             }
           </aside>
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ CUSTOMERS (admin) ============ -->
+  @if (tab() === 'customers') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" /><h3>Admin sign-in required</h3>
+          <p>Sign in to view your customers.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else if (customerStats().length === 0) {
+        <div class="empty"><app-icon name="user" [size]="40" /><h3>No registered customers yet</h3><p>Customers who create an account on the shop appear here.</p></div>
+      } @else {
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Spent</th></tr></thead>
+            <tbody>
+              @for (c of customerStats(); track c.uid) {
+                <tr>
+                  <td>{{ c.name || '—' }}</td>
+                  <td><a [href]="'mailto:' + c.email">{{ c.email }}</a></td>
+                  <td>{{ c.phone || '—' }}</td>
+                  <td>{{ c.orders }}</td>
+                  <td>{{ price(c.spent) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
+
+  <!-- ============ DISCOUNTS (admin) ============ -->
+  @if (tab() === 'discounts') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" /><h3>Admin sign-in required</h3>
+          <p>Sign in to manage discount codes.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="content-editor">
+          <div class="editor-card">
+            <h3 class="editor-title">{{ discountForm.code && editingExisting(discountForm.code) ? 'Edit code' : 'New code' }}</h3>
+            <div class="row2">
+              <label>Code <input type="text" [(ngModel)]="discountForm.code" name="dcode" placeholder="WELCOME10" style="text-transform:uppercase" /></label>
+              <label>Type
+                <select [(ngModel)]="discountForm.type" name="dtype" class="sort-select" style="width:100%">
+                  <option value="percent">% off</option>
+                  <option value="fixed">R off</option>
+                </select>
+              </label>
+            </div>
+            <div class="row2">
+              <label>Value ({{ discountForm.type === 'percent' ? '%' : 'R' }}) <input type="number" min="0" [(ngModel)]="discountForm.value" name="dval" /></label>
+              <label class="chk inline2"><input type="checkbox" [(ngModel)]="discountForm.active" name="dact" /> Active</label>
+            </div>
+            <div class="modal-actions">
+              <button class="btn" (click)="resetDiscountForm()">Clear</button>
+              <button class="btn primary" (click)="saveDiscountForm()">Save code</button>
+            </div>
+          </div>
+
+          @if (shopSvc.discounts().length) {
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Code</th><th>Discount</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  @for (d of shopSvc.discounts(); track d.code) {
+                    <tr>
+                      <td><strong>{{ d.code }}</strong></td>
+                      <td>{{ d.type === 'percent' ? d.value + '% off' : price(d.value) + ' off' }}</td>
+                      <td><span class="status-pill" [attr.data-status]="d.active ? 'paid' : ''">{{ d.active ? 'active' : 'off' }}</span></td>
+                      <td class="table-actions">
+                        <button class="mini-btn" (click)="editDiscount(d)">Edit</button>
+                        <button class="icon" (click)="askDeleteDiscount(d)"><app-icon name="trash" [size]="16" /></button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </div>
       }
     </section>

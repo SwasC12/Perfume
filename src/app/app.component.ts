@@ -10,11 +10,12 @@ import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts';
 
 interface PosLine { product: Product; qty: number; }
+interface DiscountForm { code: string; type: 'percent' | 'fixed'; value: number | null; active: boolean; }
 
 interface OilForm {
   name: string;
@@ -152,6 +153,28 @@ export class AppComponent {
 
   go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }
 
+  // ---------- Discounts ----------
+  discountForm: DiscountForm = { code: '', type: 'percent', value: null, active: true };
+  resetDiscountForm(): void { this.discountForm = { code: '', type: 'percent', value: null, active: true }; }
+  editDiscount(d: Discount): void { this.discountForm = { code: d.code, type: d.type, value: d.value, active: d.active }; }
+  editingExisting(code: string): boolean { return this.shopSvc.discounts().some((d) => d.code === code.trim().toUpperCase()); }
+  async saveDiscountForm(): Promise<void> {
+    const code = this.discountForm.code.trim().toUpperCase();
+    const value = this.numOrNull(this.discountForm.value);
+    if (!code || value == null) { this.showToast('Code and value are required'); return; }
+    try {
+      await this.shopSvc.saveDiscount({ code, type: this.discountForm.type, value, active: this.discountForm.active });
+      this.showToast('Discount saved');
+      this.resetDiscountForm();
+    } catch { this.showToast('Save failed — are you signed in?'); }
+  }
+  askDeleteDiscount(d: Discount): void {
+    this.confirm.set({
+      message: `Delete discount code ${d.code}?`,
+      action: async () => { try { await this.shopSvc.deleteDiscount(d.code); this.showToast('Discount deleted'); } catch { this.showToast('Delete failed'); } },
+    });
+  }
+
   // ---------- POS ----------
   effPrice(p: Product): number {
     return p.salePrice != null && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
@@ -178,6 +201,7 @@ export class AppComponent {
         items, subtotal, total: subtotal, customerName: this.posCustomer.trim(),
         paymentMethod: this.posPayment(), status: 'fulfilled',
       });
+      await this.shopSvc.decrementStockForOrder(items);
       this.showToast(`Sale recorded · ${ref}`);
       this.posClear();
     } catch {
@@ -196,6 +220,8 @@ export class AppComponent {
       case 'content': return 'Storefront';
       case 'settings': return 'Settings';
       case 'pos': return 'Point of Sale';
+      case 'customers': return 'Customers';
+      case 'discounts': return 'Discounts';
       default: return '';
     }
   }
@@ -222,6 +248,42 @@ export class AppComponent {
       }
     }
     return [...tally.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
+  });
+
+  // Revenue for the last 14 days (bar chart).
+  readonly revenueSeries = computed(() => {
+    const days: { label: string; total: number }[] = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now); d.setDate(now.getDate() - i); d.setHours(0, 0, 0, 0);
+      const start = d.getTime(); const end = start + 86400000;
+      const total = this.shopSvc.orders()
+        .filter((o) => o.status !== 'cancelled' && o.createdAt >= start && o.createdAt < end)
+        .reduce((s, o) => s + o.total, 0);
+      days.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, total });
+    }
+    return days;
+  });
+  readonly revenueMax = computed(() => Math.max(1, ...this.revenueSeries().map((d) => d.total)));
+  readonly channelSplit = computed(() => {
+    let online = 0, pos = 0;
+    for (const o of this.shopSvc.orders()) {
+      if (o.status === 'cancelled') continue;
+      if (o.channel === 'pos') pos += o.total; else online += o.total;
+    }
+    return { online, pos, total: online + pos };
+  });
+
+  // Customers with order stats.
+  readonly customerStats = computed(() => {
+    const byUid = new Map<string, { orders: number; spent: number }>();
+    for (const o of this.shopSvc.orders()) {
+      if (!o.uid || o.status === 'cancelled') continue;
+      const e = byUid.get(o.uid) ?? { orders: 0, spent: 0 };
+      e.orders += 1; e.spent += o.total; byUid.set(o.uid, e);
+    }
+    return this.shopSvc.customers().map((c) => ({ ...c, ...(byUid.get(c.uid) ?? { orders: 0, spent: 0 }) }))
+      .sort((a, b) => b.spent - a.spent);
   });
 
   // ---- Oil modal ----
@@ -667,7 +729,7 @@ export class AppComponent {
             await this.shopSvc.addProduct({
               name: s.name, price: s.price, salePrice: null, stockQty: null,
               inStock: true, active: true, featured: false,
-              imageUrl: s.imageUrl, gender: s.gender, inspiredBy: s.inspiredBy,
+              gender: s.gender, inspiredBy: s.inspiredBy,
             });
             added++;
           } catch { /* skip failures */ }
@@ -701,6 +763,7 @@ export class AppComponent {
   async setOrderStatus(o: Order, status: OrderStatus): Promise<void> {
     try {
       await this.shopSvc.setOrderStatus(o, status);
+      if (status === 'paid') await this.shopSvc.decrementStockForOrder(o.items);
       if (status === 'paid' || status === 'fulfilled') this.emailSvc.status(o, status);
       this.showToast(`Order marked ${status}`);
     } catch {

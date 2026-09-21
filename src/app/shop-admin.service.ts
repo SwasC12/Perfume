@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -20,6 +20,8 @@ export class ShopAdminService {
   readonly orders = signal<Order[]>([]);
   readonly siteContent = signal<SiteContent | null>(null);
   readonly settings = signal<StoreSettings | null>(null);
+  readonly customers = signal<CustomerProfile[]>([]);
+  readonly discounts = signal<Discount[]>([]);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -32,6 +34,8 @@ export class ShopAdminService {
   private unsubOrders?: Unsubscribe;
   private unsubContent?: Unsubscribe;
   private unsubSettings?: Unsubscribe;
+  private unsubCustomers?: Unsubscribe;
+  private unsubDiscounts?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
@@ -42,6 +46,18 @@ export class ShopAdminService {
       doc(db, 'settings', 'store'),
       (snap) => this.settings.set(snap.exists() ? (snap.data() as StoreSettings) : {}),
       () => this.settings.set({}),
+    );
+
+    this.unsubCustomers = onSnapshot(
+      collection(db, 'customers'),
+      (snap) => this.customers.set(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<CustomerProfile, 'uid'>) }))),
+      () => this.customers.set([]),
+    );
+
+    this.unsubDiscounts = onSnapshot(
+      collection(db, 'discounts'),
+      (snap) => this.discounts.set(snap.docs.map((d) => ({ ...(d.data() as Discount), code: d.id }))),
+      () => this.discounts.set([]),
     );
 
     this.unsubContent = onSnapshot(
@@ -76,14 +92,29 @@ export class ShopAdminService {
     this.unsubOrders?.();
     this.unsubContent?.();
     this.unsubSettings?.();
+    this.unsubCustomers?.();
+    this.unsubDiscounts?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
     this.unsubSettings = undefined;
+    this.unsubCustomers = undefined;
+    this.unsubDiscounts = undefined;
     this.products.set([]);
     this.orders.set([]);
     this.siteContent.set(null);
     this.settings.set(null);
+    this.customers.set([]);
+    this.discounts.set([]);
+  }
+
+  // ---- Discounts ----
+  async saveDiscount(d: Discount): Promise<void> {
+    const code = d.code.trim().toUpperCase();
+    await setDoc(doc(getDb(), 'discounts', code), { type: d.type, value: d.value, active: d.active, updatedAt: Date.now() });
+  }
+  async deleteDiscount(code: string): Promise<void> {
+    await deleteDoc(doc(getDb(), 'discounts', code));
   }
 
   // ---- Site content (CMS) ----
@@ -94,6 +125,22 @@ export class ShopAdminService {
   // ---- Store settings ----
   async saveStoreSettings(data: StoreSettings): Promise<void> {
     await setDoc(doc(getDb(), 'settings', 'store'), { ...data, updatedAt: Date.now() });
+  }
+
+  /** Reduce stock for the ordered items (products that track quantity). */
+  async decrementStockForOrder(items: OrderItem[]): Promise<void> {
+    const prods = this.products();
+    for (const it of items) {
+      const p = prods.find((x) => x.id === it.productId);
+      if (p && p.stockQty != null) {
+        const next = Math.max(0, p.stockQty - it.qty);
+        try {
+          await updateDoc(doc(getDb(), 'products', p.id), {
+            stockQty: next, inStock: next > 0 ? p.inStock : false, updatedAt: Date.now(),
+          });
+        } catch { /* skip */ }
+      }
+    }
   }
 
   // ---- POS (in-person sale) ----

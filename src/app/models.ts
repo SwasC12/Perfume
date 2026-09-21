@@ -83,6 +83,24 @@ export interface Address {
   country: string;
 }
 
+export interface CustomerProfile {
+  uid: string;
+  name: string;
+  email: string;
+  phone: string;
+  billing?: Address;
+  delivery?: Address;
+  updatedAt: number;
+}
+
+export interface Discount {
+  code: string; // stored uppercase; also the doc id
+  type: 'percent' | 'fixed';
+  value: number;
+  active: boolean;
+  updatedAt?: number;
+}
+
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
 export type DeliveryMethod = 'delivery' | 'collection';
 
@@ -95,6 +113,8 @@ export interface Order {
   deliveryMethod?: DeliveryMethod;
   deliveryFee?: number;
   subtotal?: number;
+  discountCode?: string;
+  discountAmount?: number;
   items: OrderItem[];
   total: number;
   status: OrderStatus;
