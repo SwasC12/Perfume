@@ -947,11 +947,11 @@
   @if (confirm(); as c) {
     <div class="overlay" (click)="confirm.set(null)">
       <div class="modal small" (click)="$event.stopPropagation()">
-        <h2>Are you sure?</h2>
+        <h2>{{ c.title || 'Are you sure?' }}</h2>
         <p class="confirm-msg">{{ c.message }}</p>
         <div class="modal-actions">
           <button class="btn" (click)="confirm.set(null)">Cancel</button>
-          <button class="btn danger" (click)="runConfirm()">Delete</button>
+          <button class="btn" [class.danger]="c.danger !== false" [class.primary]="c.danger === false" (click)="runConfirm()">{{ c.confirmLabel || 'Delete' }}</button>
         </div>
       </div>
     </div>

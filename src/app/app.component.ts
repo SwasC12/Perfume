@@ -243,7 +243,7 @@ export class AppComponent {
   syncCodeInput = '';
 
   // ---- Confirm + toast ----
-  confirm = signal<{ message: string; action: () => void } | null>(null);
+  confirm = signal<{ message: string; action: () => void; title?: string; confirmLabel?: string; danger?: boolean } | null>(null);
   toast = signal<string | null>(null);
   private toastTimer: any = null;
 
@@ -522,6 +522,9 @@ export class AppComponent {
 
   doLogout(): void {
     this.confirm.set({
+      title: 'Sign out',
+      confirmLabel: 'Sign out',
+      danger: false,
       message: 'Sign out of the admin?',
       action: async () => {
         await this.authSvc.signOut();
@@ -609,6 +612,9 @@ export class AppComponent {
   importingStarter = signal(false);
   askImportStarter(): void {
     this.confirm.set({
+      title: 'Import starter fragrances',
+      confirmLabel: 'Import',
+      danger: false,
       message: `Import ${STARTER_CATALOGUE.length} starter fragrances (15 men + 15 ladies) into your shop? Products with the same name are skipped. Prices are Rumi's — adjust them after importing.`,
       action: async () => {
         this.importingStarter.set(true);
