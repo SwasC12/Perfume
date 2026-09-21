@@ -10,13 +10,15 @@ import {
   orderBy,
   Unsubscribe,
 } from 'firebase/firestore';
+import { getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderStatus, Product } from './models';
+import { Order, OrderStatus, Product, SiteContent } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
   readonly products = signal<Product[]>([]);
   readonly orders = signal<Order[]>([]);
+  readonly siteContent = signal<SiteContent | null>(null);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -27,11 +29,18 @@ export class ShopAdminService {
 
   private unsubProducts?: Unsubscribe;
   private unsubOrders?: Unsubscribe;
+  private unsubContent?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
     if (this.unsubProducts) return; // already started
     const db = getDb();
+
+    this.unsubContent = onSnapshot(
+      doc(db, 'siteContent', 'home'),
+      (snap) => this.siteContent.set(snap.exists() ? (snap.data() as SiteContent) : {}),
+      () => this.siteContent.set({}),
+    );
 
     this.loadingProducts.set(true);
     this.unsubProducts = onSnapshot(
@@ -57,10 +66,18 @@ export class ShopAdminService {
   stop(): void {
     this.unsubProducts?.();
     this.unsubOrders?.();
+    this.unsubContent?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
+    this.unsubContent = undefined;
     this.products.set([]);
     this.orders.set([]);
+    this.siteContent.set(null);
+  }
+
+  // ---- Site content (CMS) ----
+  async saveSiteContent(data: SiteContent): Promise<void> {
+    await setDoc(doc(getDb(), 'siteContent', 'home'), { ...data, updatedAt: Date.now() });
   }
 
   // ---- Products ----

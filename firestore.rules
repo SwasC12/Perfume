@@ -3,9 +3,9 @@ rules_version = '2';
 // Firestore security rules for the shared Kauā Fragrances project (perfume-3b075).
 // Used by BOTH the Oil Tracker admin app and the kf-publicsite storefront.
 //
-// SETUP: replace PASTE_ADMIN_UID below with your admin account's UID
-// (Firebase console -> Authentication -> Users -> copy the User UID),
-// then paste this whole file into console -> Firestore Database -> Rules -> Publish.
+// SETUP: the admin UID is already filled in below. To change it, replace the UID
+// in isAdmin(), then paste this whole file into
+// console -> Firestore Database -> Rules -> Publish.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -22,10 +22,29 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Orders — customers may place one; only the admin can read/manage them.
+    // Editable storefront content (banners, hero, announcement) — public read, admin write.
+    match /siteContent/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Customer profiles — each customer can read/write only their own document.
+    match /customers/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Orders:
+    //  - a customer (or guest) may place one for themselves;
+    //  - a signed-in customer may read their own orders;
+    //  - only the admin can read all / update / delete.
     match /orders/{id} {
-      allow create: if isValidNewOrder();
-      allow read, update, delete: if isAdmin();
+      allow create: if isValidNewOrder() && (
+        request.resource.data.uid == null ||
+        (request.auth != null && request.resource.data.uid == request.auth.uid)
+      );
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     function isAdmin() {
@@ -37,8 +56,8 @@ service cloud.firestore {
       return d.status == 'pending'
         && d.reference is string
         && d.total is number
-        && d.items is list
-        && d.total >= 0;
+        && d.total >= 0
+        && d.items is list;
     }
   }
 }

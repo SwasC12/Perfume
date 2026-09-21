@@ -451,3 +451,25 @@ body {
 .order-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .order-total { font-weight: 800; }
 .order-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ---------- Admin: storefront content editor ---------- */
+.order-ship { font-size: 12.5px; color: var(--ink-dim); margin-top: 2px; }
+.content-editor { display: flex; flex-direction: column; gap: 16px; max-width: 720px; }
+.editor-hint { font-size: 13px; color: var(--ink-dim); margin: 0 0 4px; }
+.editor-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+.editor-title { font-size: 16px; margin: 0 0 14px; }
+.editor-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.editor-title-row .editor-title { margin: 0; }
+.content-editor label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-dim); margin-bottom: 12px; }
+.content-editor input[type="text"], .content-editor input[type="url"], .content-editor input[type="number"], .content-editor textarea {
+  width: 100%; margin-top: 5px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font-size: 15px; color: var(--ink); font-family: inherit;
+}
+.content-editor input:focus, .content-editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.content-editor .row2 { display: flex; gap: 12px; }
+.content-editor .row2 > label { flex: 1; }
+.chk.inline2 { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.chk.inline2 input { width: auto; margin: 0; }
+.banner-edit { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.editor-actions { position: sticky; bottom: 0; padding: 6px 0; }
+.editor-actions .btn.big { width: auto; padding: 13px 30px; }

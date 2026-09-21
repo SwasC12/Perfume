@@ -48,6 +48,7 @@
         <span class="count alert">{{ shopSvc.pendingOrderCount() }}</span>
       }
     </button>
+    <button [class.active]="tab() === 'content'" (click)="tab.set('content')">Storefront</button>
   </nav>
 
   <!-- ============ MY OILS ============ -->
@@ -335,6 +336,7 @@
                   <strong>{{ o.customer.name }}</strong>
                   <a [href]="'mailto:' + o.customer.email">{{ o.customer.email }}</a>
                   <a [href]="'tel:' + o.customer.phone">{{ o.customer.phone }}</a>
+                  @if (deliveryLine(o)) { <span class="order-ship">Ship to: {{ deliveryLine(o) }}</span> }
                   @if (o.customer.note) { <span class="order-note">"{{ o.customer.note }}"</span> }
                 </div>
                 <ul class="order-items">
@@ -355,6 +357,78 @@
             }
           </div>
         }
+      }
+    </section>
+  }
+
+  <!-- ============ STOREFRONT CONTENT (admin) ============ -->
+  @if (tab() === 'content') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <p>Sign in to edit your shop's banners, hero and specials.</p>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <div class="content-editor">
+          <p class="editor-hint">Edit what shoppers see on the Kau&#257; Fragrances home page. Images are by URL (e.g. Cloudinary). Changes go live when you save.</p>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Announcement bar</h3>
+            <label class="chk inline2"><input type="checkbox" [(ngModel)]="contentForm.announcementActive" name="annOn" /> Show announcement bar</label>
+            <label>Text <input type="text" [(ngModel)]="contentForm.announcementText" name="annText" placeholder="e.g. Free delivery on orders over R500" /></label>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Hero banner</h3>
+            <label>Title <input type="text" [(ngModel)]="contentForm.heroTitle" name="hTitle" placeholder="KAUĀ FRAGRANCES" /></label>
+            <label>Subtitle / tagline <input type="text" [(ngModel)]="contentForm.heroSubtitle" name="hSub" placeholder="&quot;one spray to last the day&quot;" /></label>
+            <label>Background image URL <input type="url" [(ngModel)]="contentForm.heroImageUrl" name="hImg" placeholder="https://… (optional)" /></label>
+            <div class="row2">
+              <label>Button text <input type="text" [(ngModel)]="contentForm.heroCtaText" name="hCta" placeholder="Shop now" /></label>
+              <label>Button link <input type="text" [(ngModel)]="contentForm.heroCtaLink" name="hCtaL" placeholder="#shop" /></label>
+            </div>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Featured section</h3>
+            <label>Heading <input type="text" [(ngModel)]="contentForm.featuredTitle" name="feat" placeholder="Featured" /></label>
+            <p class="editor-hint">Mark products as “featured” in the Products tab to show them here.</p>
+          </div>
+
+          <div class="editor-card">
+            <div class="editor-title-row">
+              <h3 class="editor-title">Promo banners / specials</h3>
+              <button class="btn" (click)="addBanner()"><app-icon name="plus" [size]="16" /> Add banner</button>
+            </div>
+            @if (!contentForm.banners?.length) {
+              <p class="editor-hint">No banners yet. Add one to create a rotating slide on the home page.</p>
+            }
+            @for (b of contentForm.banners; track b.id) {
+              <div class="banner-edit">
+                <div class="row2">
+                  <label>Title <input type="text" [(ngModel)]="b.title" [name]="b.id + 't'" /></label>
+                  <label class="chk inline2"><input type="checkbox" [(ngModel)]="b.active" [name]="b.id + 'a'" /> Active</label>
+                </div>
+                <label>Subtitle <input type="text" [(ngModel)]="b.subtitle" [name]="b.id + 's'" /></label>
+                <label>Image URL <input type="url" [(ngModel)]="b.imageUrl" [name]="b.id + 'i'" placeholder="https://…" /></label>
+                <div class="row2">
+                  <label>Button text <input type="text" [(ngModel)]="b.ctaText" [name]="b.id + 'c'" /></label>
+                  <label>Button link <input type="text" [(ngModel)]="b.ctaLink" [name]="b.id + 'l'" /></label>
+                </div>
+                <button class="mini-btn" (click)="removeBanner(b)"><app-icon name="trash" [size]="15" /> Remove banner</button>
+              </div>
+            }
+          </div>
+
+          <div class="editor-actions">
+            <button class="btn primary big" (click)="saveContent()" [disabled]="contentSaving()">
+              {{ contentSaving() ? 'Saving…' : 'Save storefront' }}
+            </button>
+          </div>
+        </div>
       }
     </section>
   }
@@ -546,22 +620,47 @@
             <label>Price (R)*
               <input type="number" min="0" step="0.01" [(ngModel)]="productForm.price" name="pprice" required />
             </label>
+            <label>Sale price (R)
+              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.salePrice" name="psale" placeholder="optional" />
+            </label>
+          </div>
+          <div class="row">
             <label>Size
               <input type="text" [(ngModel)]="productForm.size" name="psize" placeholder="e.g. 50ml" />
             </label>
+            <label>Stock quantity
+              <input type="number" min="0" [(ngModel)]="productForm.stockQty" name="pqty" placeholder="optional" />
+            </label>
           </div>
-          <label>Stock quantity (optional)
-            <input type="number" min="0" [(ngModel)]="productForm.stockQty" name="pqty" placeholder="leave blank if not tracking" />
-          </label>
-          <label>Image URL
+          <div class="row">
+            <label>Category
+              <input type="text" [(ngModel)]="productForm.category" name="pcat" placeholder="e.g. Oud, Floral" />
+            </label>
+            <label>Gender
+              <input type="text" [(ngModel)]="productForm.gender" name="pgen" placeholder="Men / Women / Unisex" />
+            </label>
+          </div>
+          <label>Main image URL
             <input type="url" [(ngModel)]="productForm.imageUrl" name="pimg" placeholder="https://…" />
           </label>
-          <label>Description
+          <label>Gallery image URLs (one per line)
+            <textarea rows="2" [(ngModel)]="productForm.galleryText" name="pgal" placeholder="https://…&#10;https://…"></textarea>
+          </label>
+          <label>Short description
             <textarea rows="2" [(ngModel)]="productForm.description" name="pdesc"></textarea>
+          </label>
+          <div class="row">
+            <label>Top notes <input type="text" [(ngModel)]="productForm.notesTop" name="pnt" /></label>
+            <label>Heart notes <input type="text" [(ngModel)]="productForm.notesHeart" name="pnh" /></label>
+          </div>
+          <label>Base notes <input type="text" [(ngModel)]="productForm.notesBase" name="pnb" /></label>
+          <label>Long description
+            <textarea rows="3" [(ngModel)]="productForm.longDescription" name="plong"></textarea>
           </label>
           <div class="row">
             <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.inStock" name="pinstock" /> In stock</label>
             <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.active" name="pactive" /> Show on shop</label>
+            <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.featured" name="pfeat" /> Featured</label>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn" (click)="productModalOpen.set(false)">Cancel</button>

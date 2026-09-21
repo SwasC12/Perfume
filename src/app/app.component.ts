@@ -7,9 +7,9 @@ import { SyncService } from './sync.service';
 import { AuthService } from './auth.service';
 import { ShopAdminService } from './shop-admin.service';
 import { IconComponent } from './icon.component';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content';
 
 interface OilForm {
   name: string;
@@ -42,10 +42,19 @@ interface ProductForm {
   description: string;
   size: string;
   price: number | null;
+  salePrice: number | null;
   stockQty: number | null;
   inStock: boolean;
   active: boolean;
+  featured: boolean;
   imageUrl: string;
+  galleryText: string; // one image URL per line
+  category: string;
+  gender: string;
+  notesTop: string;
+  notesHeart: string;
+  notesBase: string;
+  longDescription: string;
 }
 
 @Component({
@@ -80,11 +89,25 @@ export class AppComponent {
   editingProductId: string | null = null;
   productForm: ProductForm = this.emptyProductForm();
 
+  // ---- Storefront content (CMS) ----
+  contentForm: SiteContent = { banners: [] };
+  private contentLoaded = false;
+  contentSaving = signal(false);
+
   constructor() {
     // Start/stop the shop's live listeners with the admin session.
     effect(() => {
       if (this.authSvc.isAdmin) this.shopSvc.start();
       else this.shopSvc.stop();
+    });
+    // Load site content into the editable form once it arrives.
+    effect(() => {
+      const sc = this.shopSvc.siteContent();
+      if (sc && !this.contentLoaded) {
+        this.contentForm = { banners: [], ...JSON.parse(JSON.stringify(sc)) };
+        if (!this.contentForm.banners) this.contentForm.banners = [];
+        this.contentLoaded = true;
+      }
     });
   }
 
@@ -410,10 +433,19 @@ export class AppComponent {
       description: p.description ?? '',
       size: p.size ?? '',
       price: p.price,
+      salePrice: p.salePrice ?? null,
       stockQty: p.stockQty,
       inStock: p.inStock,
       active: p.active,
+      featured: !!p.featured,
       imageUrl: p.imageUrl ?? '',
+      galleryText: (p.gallery ?? []).join('\n'),
+      category: p.category ?? '',
+      gender: p.gender ?? '',
+      notesTop: p.notesTop ?? '',
+      notesHeart: p.notesHeart ?? '',
+      notesBase: p.notesBase ?? '',
+      longDescription: p.longDescription ?? '',
     };
     this.productModalOpen.set(true);
   }
@@ -425,15 +457,26 @@ export class AppComponent {
       this.showToast('Name and price are required');
       return;
     }
+    const gallery = this.productForm.galleryText
+      .split('\n').map((s) => s.trim()).filter(Boolean);
     const payload = {
       name,
       description: this.productForm.description.trim() || undefined,
       size: this.productForm.size.trim() || undefined,
       price,
+      salePrice: this.numOrNull(this.productForm.salePrice),
       stockQty: this.numOrNull(this.productForm.stockQty),
       inStock: this.productForm.inStock,
       active: this.productForm.active,
+      featured: this.productForm.featured,
       imageUrl: this.productForm.imageUrl.trim() || undefined,
+      gallery: gallery.length ? gallery : undefined,
+      category: this.productForm.category.trim() || undefined,
+      gender: this.productForm.gender.trim() || undefined,
+      notesTop: this.productForm.notesTop.trim() || undefined,
+      notesHeart: this.productForm.notesHeart.trim() || undefined,
+      notesBase: this.productForm.notesBase.trim() || undefined,
+      longDescription: this.productForm.longDescription.trim() || undefined,
     };
     try {
       if (this.editingProductId) {
@@ -490,6 +533,37 @@ export class AppComponent {
 
   orderDate(ms: number): string {
     return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // ---------- Storefront content (CMS) ----------
+  addBanner(): void {
+    if (!this.contentForm.banners) this.contentForm.banners = [];
+    this.contentForm.banners.push({
+      id: 'b_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: '', subtitle: '', imageUrl: '', ctaText: '', ctaLink: '', active: true,
+    });
+  }
+
+  removeBanner(b: Banner): void {
+    this.contentForm.banners = (this.contentForm.banners ?? []).filter((x) => x.id !== b.id);
+  }
+
+  async saveContent(): Promise<void> {
+    this.contentSaving.set(true);
+    try {
+      await this.shopSvc.saveSiteContent(this.contentForm);
+      this.showToast('Storefront updated');
+    } catch {
+      this.showToast('Save failed — are you signed in?');
+    } finally {
+      this.contentSaving.set(false);
+    }
+  }
+
+  deliveryLine(o: Order): string {
+    const d = o.delivery;
+    if (!d) return '';
+    return [d.line1, d.line2, d.city, d.province, d.postalCode, d.country].filter(Boolean).join(', ');
   }
 
   // ---------- Confirm ----------
@@ -551,6 +625,10 @@ export class AppComponent {
   }
 
   private emptyProductForm(): ProductForm {
-    return { name: '', description: '', size: '', price: null, stockQty: null, inStock: true, active: true, imageUrl: '' };
+    return {
+      name: '', description: '', size: '', price: null, salePrice: null, stockQty: null,
+      inStock: true, active: true, featured: false, imageUrl: '', galleryText: '',
+      category: '', gender: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
+    };
   }
 }

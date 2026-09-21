@@ -41,10 +41,19 @@ export interface Product {
   description?: string;
   size?: string;
   price: number;
+  salePrice?: number | null;
   stockQty: number | null;
   inStock: boolean;
   active: boolean;
   imageUrl?: string;
+  gallery?: string[];
+  category?: string;
+  gender?: string;
+  notesTop?: string;
+  notesHeart?: string;
+  notesBase?: string;
+  longDescription?: string;
+  featured?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -64,17 +73,51 @@ export interface OrderCustomer {
   note?: string;
 }
 
+export interface Address {
+  line1: string;
+  line2?: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+}
+
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
 
 export interface Order {
   id: string;
   reference: string;
+  uid?: string | null;
   customer: OrderCustomer;
+  delivery?: Address;
   items: OrderItem[];
   total: number;
   status: OrderStatus;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface Banner {
+  id: string;
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  ctaText?: string;
+  ctaLink?: string;
+  active: boolean;
+}
+
+export interface SiteContent {
+  announcementText?: string;
+  announcementActive?: boolean;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  heroImageUrl?: string;
+  heroCtaText?: string;
+  heroCtaLink?: string;
+  banners?: Banner[];
+  featuredTitle?: string;
+  updatedAt?: number;
 }
 
 export interface RumiSyncResponse {
