@@ -269,6 +269,9 @@
         <div class="toolbar">
           <input class="search" type="search" placeholder="Search products…"
                  [ngModel]="productSearch()" (ngModelChange)="productSearch.set($event)" />
+          <button class="btn" (click)="askImportStarter()" [disabled]="importingStarter()">
+            <app-icon name="refresh" [size]="16" /> {{ importingStarter() ? 'Importing…' : 'Import starter fragrances' }}
+          </button>
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
         </div>
 

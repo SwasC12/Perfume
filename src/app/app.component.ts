@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { ShopAdminService } from './shop-admin.service';
 import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
+import { STARTER_CATALOGUE } from './starter-catalogue';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos';
@@ -603,6 +604,31 @@ export class AppComponent {
     } catch {
       this.showToast('Save failed — are you signed in?');
     }
+  }
+
+  importingStarter = signal(false);
+  askImportStarter(): void {
+    this.confirm.set({
+      message: `Import ${STARTER_CATALOGUE.length} starter fragrances (15 men + 15 ladies) into your shop? Products with the same name are skipped. Prices are Rumi's — adjust them after importing.`,
+      action: async () => {
+        this.importingStarter.set(true);
+        const existing = new Set(this.shopSvc.products().map((p) => p.name.trim().toLowerCase()));
+        let added = 0;
+        for (const s of STARTER_CATALOGUE) {
+          if (existing.has(s.name.trim().toLowerCase())) continue;
+          try {
+            await this.shopSvc.addProduct({
+              name: s.name, price: s.price, salePrice: null, stockQty: null,
+              inStock: true, active: true, featured: false,
+              imageUrl: s.imageUrl, gender: s.gender, inspiredBy: s.inspiredBy,
+            });
+            added++;
+          } catch { /* skip failures */ }
+        }
+        this.importingStarter.set(false);
+        this.showToast(added ? `Imported ${added} fragrances` : 'All already imported');
+      },
+    });
   }
 
   async toggleProductActive(p: Product): Promise<void> {
