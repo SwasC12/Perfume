@@ -473,3 +473,13 @@ body {
 .banner-edit { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
 .editor-actions { position: sticky; bottom: 0; padding: 6px 0; }
 .editor-actions .btn.big { width: auto; padding: 13px 30px; }
+
+/* ---------- Password show/hide ---------- */
+.pw-field { position: relative; display: block; margin-top: 5px; }
+.pw-field input { margin-top: 0 !important; padding-right: 44px; }
+.pw-toggle {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; color: var(--ink-dim); cursor: pointer;
+  padding: 4px; display: inline-flex; line-height: 0;
+}
+.pw-toggle:hover { color: var(--ink); }

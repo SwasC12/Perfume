@@ -83,6 +83,7 @@ export class AppComponent {
   adminLoginOpen = signal(false);
   loginEmail = '';
   loginPassword = '';
+  showLoginPw = signal(false);
 
   // ---- Product modal ----
   productModalOpen = signal(false);
