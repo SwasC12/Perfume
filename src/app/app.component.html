@@ -856,12 +856,28 @@
           <label>Inspired by (smells like)
             <input type="text" [(ngModel)]="productForm.inspiredBy" name="pinsp" placeholder="e.g. Tom Ford Oud Wood" />
           </label>
-          <label>Main image URL
-            <input type="url" [(ngModel)]="productForm.imageUrl" name="pimg" placeholder="https://…" />
-          </label>
-          <label>Gallery image URLs (one per line)
-            <textarea rows="2" [(ngModel)]="productForm.galleryText" name="pgal" placeholder="https://…&#10;https://…"></textarea>
-          </label>
+          <label>Main image</label>
+          <div class="img-field">
+            <div class="img-prev" [class.empty]="!productForm.imageUrl">
+              @if (productForm.imageUrl) { <img [src]="productForm.imageUrl" alt="" /> }
+              @else { <app-icon name="package" [size]="28" /> }
+            </div>
+            <div class="img-controls">
+              <label class="btn file-btn">Upload photo<input type="file" accept="image/*" (change)="onMainImageFile($event)" hidden /></label>
+              @if (productForm.imageUrl) { <button type="button" class="mini-btn" (click)="productForm.imageUrl=''">Remove</button> }
+              @if (!isDataUrl(productForm.imageUrl)) {
+                <input type="url" class="img-url" [(ngModel)]="productForm.imageUrl" name="pimg" placeholder="…or paste an image URL" />
+              }
+            </div>
+          </div>
+
+          <label>Gallery images</label>
+          <div class="gallery-field">
+            @for (g of productForm.gallery; track $index) {
+              <div class="gal-thumb"><img [src]="g" alt="" /><button type="button" class="gal-remove" (click)="removeGalleryImage($index)"><app-icon name="x" [size]="12" /></button></div>
+            }
+            <label class="gal-add" title="Add gallery photo"><app-icon name="plus" [size]="18" /><input type="file" accept="image/*" (change)="onGalleryFile($event)" hidden /></label>
+          </div>
           <label>Short description
             <textarea rows="2" [(ngModel)]="productForm.description" name="pdesc"></textarea>
           </label>

@@ -9,6 +9,7 @@ import { ShopAdminService } from './shop-admin.service';
 import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
+import { compressImage } from './image-util';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos';
@@ -52,7 +53,7 @@ interface ProductForm {
   active: boolean;
   featured: boolean;
   imageUrl: string;
-  galleryText: string; // one image URL per line
+  gallery: string[];
   category: string;
   gender: string;
   inspiredBy: string;
@@ -554,7 +555,7 @@ export class AppComponent {
       active: p.active,
       featured: !!p.featured,
       imageUrl: p.imageUrl ?? '',
-      galleryText: (p.gallery ?? []).join('\n'),
+      gallery: [...(p.gallery ?? [])],
       category: p.category ?? '',
       gender: p.gender ?? '',
       inspiredBy: p.inspiredBy ?? '',
@@ -573,8 +574,7 @@ export class AppComponent {
       this.showToast('Name and price are required');
       return;
     }
-    const gallery = this.productForm.galleryText
-      .split('\n').map((s) => s.trim()).filter(Boolean);
+    const gallery = this.productForm.gallery.filter(Boolean);
     const payload = {
       name,
       description: this.productForm.description.trim() || undefined,
@@ -595,6 +595,11 @@ export class AppComponent {
       notesBase: this.productForm.notesBase.trim() || undefined,
       longDescription: this.productForm.longDescription.trim() || undefined,
     };
+    // Guard against Firestore's ~1MB per-document limit (uploaded images are stored inline).
+    if (JSON.stringify(payload).length > 950000) {
+      this.showToast('Images too large — remove a gallery image or use smaller photos');
+      return;
+    }
     try {
       if (this.editingProductId) {
         await this.shopSvc.updateProduct(this.editingProductId, payload);
@@ -607,6 +612,42 @@ export class AppComponent {
     } catch {
       this.showToast('Save failed — are you signed in?');
     }
+  }
+
+  // ---------- Product image uploads (in-browser compress → data URL) ----------
+  isDataUrl(s: string | undefined): boolean { return !!s && s.startsWith('data:'); }
+
+  async onMainImageFile(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      this.productForm.imageUrl = await compressImage(file, 900, 0.82);
+    } catch {
+      this.showToast('Could not process that image');
+    }
+    input.value = '';
+  }
+
+  async onGalleryFile(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const url = await compressImage(file, 800, 0.72);
+      this.productForm.gallery = [...this.productForm.gallery, url];
+    } catch {
+      this.showToast('Could not process that image');
+    }
+    input.value = '';
+  }
+
+  addGalleryUrl(url: string): void {
+    const u = url.trim();
+    if (u) this.productForm.gallery = [...this.productForm.gallery, u];
+  }
+  removeGalleryImage(i: number): void {
+    this.productForm.gallery = this.productForm.gallery.filter((_, idx) => idx !== i);
   }
 
   importingStarter = signal(false);
@@ -828,7 +869,7 @@ export class AppComponent {
   private emptyProductForm(): ProductForm {
     return {
       name: '', description: '', size: '', price: null, salePrice: null, stockQty: null,
-      inStock: true, active: true, featured: false, imageUrl: '', galleryText: '',
+      inStock: true, active: true, featured: false, imageUrl: '', gallery: [],
       category: '', gender: '', inspiredBy: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
     };
   }
