@@ -13,6 +13,7 @@ import { compressImage } from './image-util';
 import QRCode from 'qrcode';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, discountAmountFor } from './discount-util';
+import { productImage, isCustomImage } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts';
@@ -799,6 +800,38 @@ export class AppComponent {
         }
         this.importingStarter.set(false);
         this.showToast(added ? `Imported ${added} fragrances` : 'All already imported');
+      },
+    });
+  }
+
+  // Show branded placeholder for products with no own image (incl. old Rumi cover URLs).
+  prodImg = productImage;
+  readonly cleaningImages = signal(false);
+  readonly rumiImageCount = computed(
+    () => this.shopSvc.products().filter((p) => p.imageUrl && !isCustomImage(p.imageUrl)).length,
+  );
+
+  askCleanRumiImages(): void {
+    const n = this.rumiImageCount();
+    if (!n) return;
+    this.confirm.set({
+      title: 'Use placeholders?',
+      message: `Remove the old Rumi image links from ${n} product${n === 1 ? '' : 's'}? They'll show the branded placeholder until you add your own photo.`,
+      confirmLabel: 'Remove links',
+      danger: false,
+      action: async () => {
+        this.cleaningImages.set(true);
+        let done = 0;
+        try {
+          for (const p of this.shopSvc.products()) {
+            if (p.imageUrl && !isCustomImage(p.imageUrl)) {
+              try { await this.shopSvc.updateProduct(p.id, { imageUrl: '' }); done++; } catch { /* skip */ }
+            }
+          }
+          this.showToast(`Cleared ${done} image link${done === 1 ? '' : 's'}`);
+        } finally {
+          this.cleaningImages.set(false);
+        }
       },
     });
   }

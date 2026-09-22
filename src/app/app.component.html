@@ -278,6 +278,11 @@
           <button class="btn" (click)="askImportStarter()" [disabled]="importingStarter()">
             <app-icon name="refresh" [size]="16" /> {{ importingStarter() ? 'Importing…' : 'Import starter fragrances' }}
           </button>
+          @if (rumiImageCount() > 0) {
+            <button class="btn" (click)="askCleanRumiImages()" [disabled]="cleaningImages()">
+              <app-icon name="package" [size]="16" /> {{ cleaningImages() ? 'Clearing…' : 'Use placeholders (' + rumiImageCount() + ')' }}
+            </button>
+          }
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
         </div>
 
@@ -293,8 +298,7 @@
             @for (p of filteredProducts(); track p.id) {
               <article class="card" [class.oos]="!p.active">
                 <div class="thumb">
-                  @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" /> }
-                  @else { <span class="thumb-fallback"><app-icon name="package" [size]="40" /></span> }
+                  <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
                   <span class="badge" [class.ok]="p.inStock" [class.warn]="!p.inStock">{{ p.inStock ? 'In stock' : 'Out' }}</span>
                   @if (!p.active) { <span class="badge manual">Hidden</span> }
                 </div>
@@ -636,8 +640,7 @@
                 @for (p of posProducts(); track p.id) {
                   <button class="pos-prod" (click)="posAdd(p)">
                     <div class="pos-prod-thumb">
-                      @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" loading="lazy" (error)="onImgError($event)" /> }
-                      @else { <app-icon name="package" [size]="26" /> }
+                      <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
                     </div>
                     <span class="pos-prod-name">{{ p.name }}</span>
                     <span class="pos-prod-price">{{ price(effPrice(p)) }}</span>
