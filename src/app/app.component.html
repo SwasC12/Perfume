@@ -973,7 +973,12 @@
               <input type="text" [(ngModel)]="productForm.category" name="pcat" placeholder="e.g. Oud, Floral" />
             </label>
             <label>Gender
-              <input type="text" [(ngModel)]="productForm.gender" name="pgen" placeholder="Men / Women / Unisex" />
+              <select [(ngModel)]="productForm.gender" name="pgen" class="form-select">
+                <option value="">— select —</option>
+                <option value="Men">Men</option>
+                <option value="Women">Women</option>
+                <option value="Unisex">Unisex (both)</option>
+              </select>
             </label>
           </div>
           <label>Inspired by (smells like)

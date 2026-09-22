@@ -656,3 +656,10 @@ button.dash-row:hover { color: var(--accent); }
 .data-table tr:last-child td { border-bottom: 0; }
 .data-table a { color: var(--accent); text-decoration: none; }
 .table-actions { display: flex; gap: 6px; align-items: center; }
+
+/* Admin form select (matches modal inputs) */
+.form-select {
+  width: 100%; margin-top: 5px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font-size: 15px; color: var(--ink); font-family: inherit; background: var(--surface); cursor: pointer;
+}
+.form-select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
