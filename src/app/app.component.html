@@ -385,7 +385,10 @@
                   <div class="order-actions">
                     <button class="mini-btn" (click)="openOrderDetail(o)">Details</button>
                     @if (o.status === 'pending') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'paid')">Mark paid</button> }
-                    @if (o.status === 'paid') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'fulfilled')">Mark fulfilled</button> }
+                    @if (o.status === 'paid') {
+                      @if (o.stage === 'shipped') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'fulfilled')">Mark fulfilled</button> }
+                      @else { <button class="mini-btn" (click)="openOrderDetail(o)">Fulfil steps</button> }
+                    }
                     @if (o.status !== 'cancelled' && o.status !== 'fulfilled') { <button class="mini-btn" (click)="setOrderStatus(o, 'cancelled')">Cancel</button> }
                     <button class="icon" title="Delete order" (click)="askDeleteOrder(o)"><app-icon name="trash" [size]="17" /></button>
                   </div>
@@ -1136,15 +1139,17 @@
         </div>
 
         <div class="stage-steps no-print">
-          <div class="stage-label">Fulfilment — tap a step to update</div>
+          <div class="stage-label">Fulfilment — work through each step in order</div>
           <div class="stage-row">
             @for (s of stages; track s; let i = $index) {
-              <button class="stage" [class.done]="stageIndex(o) >= i" [class.current]="stageIndex(o) === i" (click)="setStage(o, s)">
+              <button class="stage" [class.done]="stageIndex(o) >= i" [class.current]="stageIndex(o) === i"
+                      [class.locked]="i > stageIndex(o) + 1" [disabled]="i > stageIndex(o) + 1" (click)="setStage(o, s)">
                 <span class="stage-dot">@if (stageIndex(o) > i) { <app-icon name="check" [size]="13" /> } @else { {{ i + 1 }} }</span>
                 {{ s }}
               </button>
             }
           </div>
+          @if (stageIndex(o) < 4) { <p class="stage-hint">The order can only be fulfilled once it reaches <strong>shipped</strong>.</p> }
         </div>
 
         <div class="modal-actions no-print">

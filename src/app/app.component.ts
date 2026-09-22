@@ -717,8 +717,18 @@ export class AppComponent {
     }
     try {
       if (this.editingProductId) {
-        await this.shopSvc.updateProduct(this.editingProductId, payload);
-        this.showToast('Product updated');
+        const prev = this.shopSvc.products().find((x) => x.id === this.editingProductId);
+        const wasSellable = prev ? this.isSellable(prev) : false;
+        const nowSellable = this.isSellable(payload);
+        const editedId = this.editingProductId;
+        await this.shopSvc.updateProduct(editedId, payload);
+        // Auto-notify anyone waiting if this product just came back in stock.
+        if (!wasSellable && nowSellable && this.pendingRestock(editedId)) {
+          const sent = await this.notifyPendingRestock(editedId, name);
+          this.showToast(sent ? `Product updated · notified ${sent} waiting` : 'Product updated');
+        } else {
+          this.showToast('Product updated');
+        }
       } else {
         await this.shopSvc.addProduct(payload);
         this.showToast('Product added');
@@ -797,16 +807,27 @@ export class AppComponent {
     return this.shopSvc.restockRequests().filter((r) => r.productId === productId && !r.notified).length;
   }
   async notifyRestock(p: Product): Promise<void> {
-    const reqs = this.shopSvc.restockRequests().filter((r) => r.productId === p.id && !r.notified);
-    if (!reqs.length) return;
+    if (!this.pendingRestock(p.id)) return;
     try {
       if (!p.inStock) await this.shopSvc.updateProduct(p.id, { inStock: true });
-      let sent = 0;
-      for (const r of reqs) {
-        try { await this.emailSvc.restock(r.email, p.name); await this.shopSvc.markRestockNotified(r.id); sent++; } catch { /* skip */ }
-      }
+      const sent = await this.notifyPendingRestock(p.id, p.name);
       this.showToast(`Marked in stock · notified ${sent}`);
     } catch { this.showToast('Notify failed'); }
+  }
+
+  /** Whether a product is actually sellable (in stock and, if tracked, has quantity). */
+  private isSellable(p: { inStock: boolean; stockQty: number | null }): boolean {
+    return !!p.inStock && (p.stockQty == null || p.stockQty > 0);
+  }
+
+  /** Email everyone waiting on this product and mark their request notified. Returns count sent. */
+  private async notifyPendingRestock(productId: string, productName: string): Promise<number> {
+    const reqs = this.shopSvc.restockRequests().filter((r) => r.productId === productId && !r.notified);
+    let sent = 0;
+    for (const r of reqs) {
+      try { await this.emailSvc.restock(r.email, productName); await this.shopSvc.markRestockNotified(r.id); sent++; } catch { /* skip */ }
+    }
+    return sent;
   }
 
   async toggleProductActive(p: Product): Promise<void> {
@@ -830,6 +851,12 @@ export class AppComponent {
 
   // ---------- Orders ----------
   async setOrderStatus(o: Order, status: OrderStatus): Promise<void> {
+    // Safety gate: never fulfil until every fulfilment step has been worked through.
+    if (status === 'fulfilled' && o.stage !== 'shipped') {
+      this.showToast('Work through all fulfilment steps first');
+      this.openOrderDetail(o);
+      return;
+    }
     try {
       await this.shopSvc.setOrderStatus(o, status);
       if (status === 'paid') await this.shopSvc.decrementStockForOrder(o.items);
@@ -921,6 +948,15 @@ export class AppComponent {
 
   stageIndex(o: Order): number { return FULFIL_STAGES.indexOf((o.stage || 'placed') as FulfilStage); }
   async setStage(o: Order, stage: FulfilStage): Promise<void> {
+    // Steps must be worked through in order — you can advance one step or go back to correct,
+    // but never skip ahead. This is the safety net so an order can't be shipped by accident.
+    const current = this.stageIndex(o);
+    const target = FULFIL_STAGES.indexOf(stage);
+    if (target > current + 1) {
+      this.showToast('Complete the steps in order');
+      return;
+    }
+    if (target === current) return; // already here
     try {
       await this.shopSvc.setOrderStage(o.id, stage);
       this.selectedOrder.set({ ...o, stage });
