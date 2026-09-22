@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -22,6 +22,7 @@ export class ShopAdminService {
   readonly settings = signal<StoreSettings | null>(null);
   readonly customers = signal<CustomerProfile[]>([]);
   readonly discounts = signal<Discount[]>([]);
+  readonly restockRequests = signal<RestockRequest[]>([]);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -36,6 +37,7 @@ export class ShopAdminService {
   private unsubSettings?: Unsubscribe;
   private unsubCustomers?: Unsubscribe;
   private unsubDiscounts?: Unsubscribe;
+  private unsubRestock?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
@@ -58,6 +60,12 @@ export class ShopAdminService {
       collection(db, 'discounts'),
       (snap) => this.discounts.set(snap.docs.map((d) => ({ ...(d.data() as Discount), code: d.id }))),
       () => this.discounts.set([]),
+    );
+
+    this.unsubRestock = onSnapshot(
+      collection(db, 'restockRequests'),
+      (snap) => this.restockRequests.set(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RestockRequest, 'id'>) }))),
+      () => this.restockRequests.set([]),
     );
 
     this.unsubContent = onSnapshot(
@@ -94,18 +102,25 @@ export class ShopAdminService {
     this.unsubSettings?.();
     this.unsubCustomers?.();
     this.unsubDiscounts?.();
+    this.unsubRestock?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
     this.unsubSettings = undefined;
     this.unsubCustomers = undefined;
     this.unsubDiscounts = undefined;
+    this.unsubRestock = undefined;
     this.products.set([]);
     this.orders.set([]);
     this.siteContent.set(null);
     this.settings.set(null);
     this.customers.set([]);
     this.discounts.set([]);
+    this.restockRequests.set([]);
+  }
+
+  async markRestockNotified(id: string): Promise<void> {
+    await updateDoc(doc(getDb(), 'restockRequests', id), { notified: true });
   }
 
   // ---- Discounts ----

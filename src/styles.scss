@@ -663,3 +663,6 @@ button.dash-row:hover { color: var(--accent); }
   padding: 10px 12px; font-size: 15px; color: var(--ink); font-family: inherit; background: var(--surface); cursor: pointer;
 }
 .form-select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+/* Restock notify button on product cards */
+.restock-btn { width: 100%; justify-content: center; margin: 0 10px 8px; width: calc(100% - 20px); }

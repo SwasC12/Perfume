@@ -306,6 +306,11 @@
                   </p>
                   @if (p.description) { <p class="notes">{{ p.description }}</p> }
                 </div>
+                @if (pendingRestock(p.id) > 0) {
+                  <button class="mini-btn ok restock-btn" (click)="notifyRestock(p)">
+                    Notify {{ pendingRestock(p.id) }} waiting · restock
+                  </button>
+                }
                 <div class="actions rumi-actions">
                   <button class="mini-btn" (click)="toggleProductActive(p)">{{ p.active ? 'Hide' : 'Show' }}</button>
                   <div class="icon-group">

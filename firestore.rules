@@ -54,6 +54,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // "Notify me when back in stock" requests — anyone can create; only admin reads/manages.
+    match /restockRequests/{id} {
+      allow create: if request.resource.data.notified == false
+        && request.resource.data.email is string
+        && request.resource.data.productId is string;
+      allow read, update, delete: if isAdmin();
+    }
+
     // Orders:
     //  - a customer (or guest) may place one for themselves;
     //  - a signed-in customer may read their own orders;

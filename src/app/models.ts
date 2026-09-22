@@ -101,6 +101,15 @@ export interface Discount {
   updatedAt?: number;
 }
 
+export interface RestockRequest {
+  id: string;
+  productId: string;
+  productName: string;
+  email: string;
+  createdAt: number;
+  notified: boolean;
+}
+
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
 export type DeliveryMethod = 'delivery' | 'collection';
 

@@ -740,6 +740,22 @@ export class AppComponent {
     });
   }
 
+  pendingRestock(productId: string): number {
+    return this.shopSvc.restockRequests().filter((r) => r.productId === productId && !r.notified).length;
+  }
+  async notifyRestock(p: Product): Promise<void> {
+    const reqs = this.shopSvc.restockRequests().filter((r) => r.productId === p.id && !r.notified);
+    if (!reqs.length) return;
+    try {
+      if (!p.inStock) await this.shopSvc.updateProduct(p.id, { inStock: true });
+      let sent = 0;
+      for (const r of reqs) {
+        try { await this.emailSvc.restock(r.email, p.name); await this.shopSvc.markRestockNotified(r.id); sent++; } catch { /* skip */ }
+      }
+      this.showToast(`Marked in stock · notified ${sent}`);
+    } catch { this.showToast('Notify failed'); }
+  }
+
   async toggleProductActive(p: Product): Promise<void> {
     try {
       await this.shopSvc.updateProduct(p.id, { active: !p.active });
