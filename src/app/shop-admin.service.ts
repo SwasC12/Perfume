@@ -129,7 +129,11 @@ export class ShopAdminService {
     await setDoc(doc(getDb(), 'discounts', code), {
       type: d.type, value: d.value, active: d.active,
       scope: d.scope ?? 'both', minSpend: d.minSpend ?? 0, maxUses: d.maxUses ?? null,
-      usedCount: d.usedCount ?? 0, expiresAt: d.expiresAt ?? null, updatedAt: Date.now(),
+      usedCount: d.usedCount ?? 0, expiresAt: d.expiresAt ?? null,
+      mechanic: d.mechanic ?? 'order',
+      bundleQty: d.bundleQty ?? null, bundleReward: d.bundleReward ?? null,
+      bundleValue: d.bundleValue ?? null, bundleFree: d.bundleFree ?? null,
+      updatedAt: Date.now(),
     });
   }
   async deleteDiscount(code: string): Promise<void> {

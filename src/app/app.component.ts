@@ -12,7 +12,7 @@ import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
 import QRCode from 'qrcode';
 import { FULFIL_STAGES, FulfilStage } from './models';
-import { discountError, discountAmountFor } from './discount-util';
+import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
 import { productImage, isCustomImage } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
@@ -22,6 +22,9 @@ interface PosLine { product: Product; qty: number; }
 interface DiscountForm {
   code: string; type: 'percent' | 'fixed'; value: number | null; active: boolean;
   scope: 'online' | 'pos' | 'both'; minSpend: number | null; maxUses: number | null; expires: string;
+  mechanic: 'order' | 'item' | 'bundle';
+  bundleQty: number | null; bundleReward: 'percent' | 'fixed' | 'price' | 'free';
+  bundleValue: number | null; bundleFree: number | null;
 }
 
 interface OilForm {
@@ -139,10 +142,14 @@ export class AppComponent {
       .filter((p) => (q ? p.name.toLowerCase().includes(q) || (p.inspiredBy ?? '').toLowerCase().includes(q) : true));
   });
   readonly posSubtotal = computed(() => this.posCart().reduce((s, l) => s + this.effPrice(l.product) * l.qty, 0));
+  private posLines(): DiscountLine[] {
+    return this.posCart().map((l) => ({ unitPrice: this.effPrice(l.product), qty: l.qty }));
+  }
   readonly posDiscountAmount = computed(() => {
     const d = this.posDiscount();
-    return d ? discountAmountFor(d, this.posSubtotal()) : 0;
+    return d ? computeDiscount(d, this.posLines()) : 0;
   });
+  discountSummary = discountSummary;
   readonly posTotal = computed(() => Math.max(0, this.posSubtotal() - this.posDiscountAmount()));
   readonly posChange = computed(() => (this.posCash != null ? Math.max(0, this.posCash - this.posTotal()) : 0));
 
@@ -176,7 +183,11 @@ export class AppComponent {
   // ---------- Discounts ----------
   discountForm: DiscountForm = this.emptyDiscountForm();
   private emptyDiscountForm(): DiscountForm {
-    return { code: '', type: 'percent', value: null, active: true, scope: 'both', minSpend: null, maxUses: null, expires: '' };
+    return {
+      code: '', type: 'percent', value: null, active: true, scope: 'both',
+      minSpend: null, maxUses: null, expires: '',
+      mechanic: 'order', bundleQty: 2, bundleReward: 'percent', bundleValue: null, bundleFree: 1,
+    };
   }
   resetDiscountForm(): void { this.discountForm = this.emptyDiscountForm(); }
   editDiscount(d: Discount): void {
@@ -184,20 +195,55 @@ export class AppComponent {
       code: d.code, type: d.type, value: d.value, active: d.active,
       scope: d.scope || 'both', minSpend: d.minSpend ?? null, maxUses: d.maxUses ?? null,
       expires: d.expiresAt ? new Date(d.expiresAt).toISOString().slice(0, 10) : '',
+      mechanic: d.mechanic || 'order',
+      bundleQty: d.bundleQty ?? 2, bundleReward: d.bundleReward || 'percent',
+      bundleValue: d.bundleValue ?? null, bundleFree: d.bundleFree ?? 1,
     };
   }
   editingExisting(code: string): boolean { return this.shopSvc.discounts().some((d) => d.code === code.trim().toUpperCase()); }
+  /** Live preview of the code being built, for the form footer. */
+  discountFormSummary(): string {
+    const f = this.discountForm;
+    return discountSummary({
+      code: f.code, type: f.type, value: f.value ?? 0, active: f.active,
+      mechanic: f.mechanic, bundleQty: f.bundleQty ?? 2, bundleReward: f.bundleReward,
+      bundleValue: f.bundleValue ?? 0, bundleFree: f.bundleFree ?? 1,
+    });
+  }
   async saveDiscountForm(): Promise<void> {
-    const code = this.discountForm.code.trim().toUpperCase();
-    const value = this.numOrNull(this.discountForm.value);
-    if (!code || value == null) { this.showToast('Code and value are required'); return; }
+    const f = this.discountForm;
+    const code = f.code.trim().toUpperCase();
+    if (!code) { this.showToast('A code is required'); return; }
     const existing = this.shopSvc.discounts().find((x) => x.code === code);
-    const expiresAt = this.discountForm.expires ? new Date(this.discountForm.expires + 'T23:59:59').getTime() : null;
+    const expiresAt = f.expires ? new Date(f.expires + 'T23:59:59').getTime() : null;
+
+    // Validate per mechanic.
+    let value = 0;
+    let bundle: Partial<Discount> = {};
+    if (f.mechanic === 'bundle') {
+      const qty = this.numOrNull(f.bundleQty);
+      if (qty == null || qty < 2) { this.showToast('Bundle size must be at least 2'); return; }
+      if (f.bundleReward === 'free') {
+        const free = this.numOrNull(f.bundleFree);
+        if (free == null || free < 1 || free >= qty) { this.showToast('Free items must be between 1 and bundle size − 1'); return; }
+        bundle = { bundleQty: qty, bundleReward: 'free', bundleFree: free, bundleValue: 0 };
+      } else {
+        const bv = this.numOrNull(f.bundleValue);
+        if (bv == null) { this.showToast('Enter the bundle value'); return; }
+        bundle = { bundleQty: qty, bundleReward: f.bundleReward, bundleValue: bv, bundleFree: 0 };
+      }
+    } else {
+      const v = this.numOrNull(f.value);
+      if (v == null) { this.showToast('A value is required'); return; }
+      value = v;
+    }
+
     try {
       await this.shopSvc.saveDiscount({
-        code, type: this.discountForm.type, value, active: this.discountForm.active,
-        scope: this.discountForm.scope, minSpend: this.numOrNull(this.discountForm.minSpend) ?? 0,
-        maxUses: this.numOrNull(this.discountForm.maxUses), expiresAt, usedCount: existing?.usedCount ?? 0,
+        code, type: f.type, value, active: f.active,
+        scope: f.scope, minSpend: this.numOrNull(f.minSpend) ?? 0,
+        maxUses: this.numOrNull(f.maxUses), expiresAt, usedCount: existing?.usedCount ?? 0,
+        mechanic: f.mechanic, ...bundle,
       });
       this.showToast('Discount saved');
       this.resetDiscountForm();
@@ -235,7 +281,7 @@ export class AppComponent {
     this.posPromoError.set(null);
     const d = await this.shopSvc.getDiscount(code);
     if (!d) { this.posDiscount.set(null); this.posPromoError.set('Code not found.'); return; }
-    const err = discountError(d, this.posSubtotal(), 'pos');
+    const err = discountError(d, this.posLines(), 'pos');
     if (err) { this.posDiscount.set(null); this.posPromoError.set(err); return; }
     this.posDiscount.set(d);
   }

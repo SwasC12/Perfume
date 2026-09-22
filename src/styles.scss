@@ -335,6 +335,12 @@ body {
   animation: pop 0.16s ease;
 }
 .modal.small { max-width: 360px; }
+.discount-preview { background: var(--accent-soft); color: var(--accent-dark); border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 600; margin: 4px 0 12px; }
+.discount-preview span { color: var(--ink-dim); font-weight: 700; margin-right: 4px; }
+.modal.wide { max-width: 760px; padding: 26px 28px; }
+.modal.wide .row { flex-wrap: wrap; }
+.modal.wide .row > label { flex: 1 1 200px; }
+@media (max-width: 640px) { .modal.wide .row { flex-direction: column; gap: 0; } }
 .modal h2 { margin: 0 0 16px; font-size: 19px; }
 .modal label {
   display: block;

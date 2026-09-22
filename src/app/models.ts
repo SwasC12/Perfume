@@ -95,16 +95,24 @@ export interface CustomerProfile {
 
 export type DiscountScope = 'online' | 'pos' | 'both';
 
+export type DiscountMechanic = 'order' | 'item' | 'bundle';
+export type BundleReward = 'percent' | 'fixed' | 'price' | 'free';
+
 export interface Discount {
   code: string; // stored uppercase; also the doc id
-  type: 'percent' | 'fixed';
-  value: number;
+  type: 'percent' | 'fixed'; // used by 'order' and 'item' mechanics
+  value: number; // percent (0–100) or rand amount
   active: boolean;
   scope?: DiscountScope; // where the code may be used (default 'both')
   minSpend?: number; // minimum subtotal to qualify
   maxUses?: number | null; // total redemption limit (null = unlimited)
   usedCount?: number; // times redeemed
   expiresAt?: number | null; // epoch ms; null = no expiry
+  mechanic?: DiscountMechanic; // how the discount works (default 'order')
+  bundleQty?: number; // multi-buy group size N
+  bundleReward?: BundleReward; // how each complete group is rewarded
+  bundleValue?: number; // % off group / R off group / group price
+  bundleFree?: number; // # cheapest items free per group (reward 'free')
   updatedAt?: number;
 }
 

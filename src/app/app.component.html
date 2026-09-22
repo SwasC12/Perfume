@@ -758,15 +758,6 @@
             <h3 class="editor-title">{{ discountForm.code && editingExisting(discountForm.code) ? 'Edit code' : 'New code' }}</h3>
             <div class="row2">
               <label>Code <input type="text" [(ngModel)]="discountForm.code" name="dcode" placeholder="WELCOME10" style="text-transform:uppercase" /></label>
-              <label>Type
-                <select [(ngModel)]="discountForm.type" name="dtype" class="sort-select" style="width:100%">
-                  <option value="percent">% off</option>
-                  <option value="fixed">R off</option>
-                </select>
-              </label>
-            </div>
-            <div class="row2">
-              <label>Value ({{ discountForm.type === 'percent' ? '%' : 'R' }}) <input type="number" min="0" [(ngModel)]="discountForm.value" name="dval" /></label>
               <label>Where it works
                 <select [(ngModel)]="discountForm.scope" name="dscope" class="sort-select" style="width:100%">
                   <option value="both">Online &amp; POS</option>
@@ -775,6 +766,48 @@
                 </select>
               </label>
             </div>
+
+            <label>How it works
+              <select [(ngModel)]="discountForm.mechanic" name="dmech" class="sort-select" style="width:100%">
+                <option value="order">Off the whole order</option>
+                <option value="item">Off every item</option>
+                <option value="bundle">Multi-buy / bundle (e.g. take 2)</option>
+              </select>
+            </label>
+
+            @if (discountForm.mechanic !== 'bundle') {
+              <div class="row2">
+                <label>Type
+                  <select [(ngModel)]="discountForm.type" name="dtype" class="sort-select" style="width:100%">
+                    <option value="percent">% off</option>
+                    <option value="fixed">R off</option>
+                  </select>
+                </label>
+                <label>Value ({{ discountForm.type === 'percent' ? '%' : 'R' }}) <input type="number" min="0" [(ngModel)]="discountForm.value" name="dval" /></label>
+              </div>
+            } @else {
+              <div class="row2">
+                <label>Bundle size (items) <input type="number" min="2" [(ngModel)]="discountForm.bundleQty" name="dbq" placeholder="2" /></label>
+                <label>Reward for each bundle
+                  <select [(ngModel)]="discountForm.bundleReward" name="dbr" class="sort-select" style="width:100%">
+                    <option value="percent">% off the bundle</option>
+                    <option value="fixed">R off the bundle</option>
+                    <option value="price">Fixed price for the bundle</option>
+                    <option value="free">Cheapest item(s) free</option>
+                  </select>
+                </label>
+              </div>
+              @if (discountForm.bundleReward === 'free') {
+                <label>How many cheapest items free (per bundle) <input type="number" min="1" [(ngModel)]="discountForm.bundleFree" name="dbf" placeholder="1" /></label>
+              } @else {
+                <label>
+                  {{ discountForm.bundleReward === 'percent' ? '% off the bundle' : discountForm.bundleReward === 'price' ? 'Price for the whole bundle (R)' : 'Amount off the bundle (R)' }}
+                  <input type="number" min="0" [(ngModel)]="discountForm.bundleValue" name="dbv" />
+                </label>
+              }
+              <p class="editor-hint">Applies per complete bundle. Extra items that don't complete a bundle stay full price — e.g. 3 items with a bundle of 2 = one bundle discounted + one full price.</p>
+            }
+
             <div class="row2">
               <label>Min spend (R, optional) <input type="number" min="0" [(ngModel)]="discountForm.minSpend" name="dmin" placeholder="none" /></label>
               <label>Max uses (optional) <input type="number" min="0" [(ngModel)]="discountForm.maxUses" name="dmax" placeholder="unlimited" /></label>
@@ -783,6 +816,7 @@
               <label>Expires (optional) <input type="date" [(ngModel)]="discountForm.expires" name="dexp" /></label>
               <label class="chk inline2"><input type="checkbox" [(ngModel)]="discountForm.active" name="dact" /> Active</label>
             </div>
+            <p class="discount-preview"><span>Preview:</span> {{ discountFormSummary() }}</p>
             <div class="modal-actions">
               <button class="btn" (click)="resetDiscountForm()">Clear</button>
               <button class="btn primary" (click)="saveDiscountForm()">Save code</button>
@@ -797,7 +831,7 @@
                   @for (d of shopSvc.discounts(); track d.code) {
                     <tr>
                       <td><strong>{{ d.code }}</strong></td>
-                      <td>{{ d.type === 'percent' ? d.value + '% off' : price(d.value) + ' off' }}</td>
+                      <td>{{ discountSummary(d) }}</td>
                       <td>{{ d.scope === 'online' ? 'Online' : d.scope === 'pos' ? 'POS' : 'Both' }}</td>
                       <td class="rules-cell">
                         @if (d.minSpend) { <span>min {{ price(d.minSpend) }}</span> }
@@ -1005,7 +1039,7 @@
   <!-- ============ PRODUCT MODAL ============ -->
   @if (productModalOpen()) {
     <div class="overlay" (click)="productModalOpen.set(false)">
-      <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal wide" (click)="$event.stopPropagation()">
         <h2>{{ editingProductId ? 'Edit product' : 'Add product' }}</h2>
         <form (ngSubmit)="saveProduct()">
           <label>Name*
