@@ -679,3 +679,12 @@ button.dash-row:hover { color: var(--accent); }
 .order-pills { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .stage-pill { font-size: 11px; font-weight: 700; text-transform: capitalize; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-dark); }
 .inv-qr { width: 74px; height: 74px; margin-top: 6px; display: block; margin-left: auto; }
+
+/* ---------- POS promo + totals ---------- */
+.promo-row { display: flex; gap: 8px; }
+.promo-row input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px; font-family: inherit; }
+.promo-row input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.pos-summary { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; }
+.sum-line { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; color: var(--ink-dim); }
+.pos-change { display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; background: var(--ok-soft); color: var(--ok); padding: 8px 12px; border-radius: 10px; margin: 6px 0; }
+.rules-cell { font-size: 12px; color: var(--ink-dim); display: flex; flex-direction: column; gap: 2px; }

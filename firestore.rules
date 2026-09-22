@@ -49,9 +49,14 @@ service cloud.firestore {
     }
 
     // Discount / promo codes — public read (to validate at checkout), admin write.
+    // Anyone may increment usedCount by exactly 1 (redemption tracking); nothing else.
     match /discounts/{code} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount'])
+        && request.resource.data.usedCount == resource.data.usedCount + 1
+      );
     }
 
     // "Notify me when back in stock" requests — anyone can create; only admin reads/manages.

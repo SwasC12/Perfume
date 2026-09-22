@@ -12,12 +12,16 @@ import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
 import QRCode from 'qrcode';
 import { FULFIL_STAGES, FulfilStage } from './models';
+import { discountError, discountAmountFor } from './discount-util';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts';
 
 interface PosLine { product: Product; qty: number; }
-interface DiscountForm { code: string; type: 'percent' | 'fixed'; value: number | null; active: boolean; }
+interface DiscountForm {
+  code: string; type: 'percent' | 'fixed'; value: number | null; active: boolean;
+  scope: 'online' | 'pos' | 'both'; minSpend: number | null; maxUses: number | null; expires: string;
+}
 
 interface OilForm {
   name: string;
@@ -122,6 +126,11 @@ export class AppComponent {
   posCustomer = '';
   readonly posPayment = signal<'cash' | 'card' | 'eft'>('cash');
 
+  posPromo = '';
+  readonly posDiscount = signal<Discount | null>(null);
+  readonly posPromoError = signal<string | null>(null);
+  posCash: number | null = null;
+
   readonly posProducts = computed<Product[]>(() => {
     const q = this.posSearch().trim().toLowerCase();
     return this.shopSvc.products()
@@ -129,6 +138,12 @@ export class AppComponent {
       .filter((p) => (q ? p.name.toLowerCase().includes(q) || (p.inspiredBy ?? '').toLowerCase().includes(q) : true));
   });
   readonly posSubtotal = computed(() => this.posCart().reduce((s, l) => s + this.effPrice(l.product) * l.qty, 0));
+  readonly posDiscountAmount = computed(() => {
+    const d = this.posDiscount();
+    return d ? discountAmountFor(d, this.posSubtotal()) : 0;
+  });
+  readonly posTotal = computed(() => Math.max(0, this.posSubtotal() - this.posDiscountAmount()));
+  readonly posChange = computed(() => (this.posCash != null ? Math.max(0, this.posCash - this.posTotal()) : 0));
 
   constructor() {
     // Start/stop the shop's live listeners with the admin session.
@@ -158,16 +173,31 @@ export class AppComponent {
   go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }
 
   // ---------- Discounts ----------
-  discountForm: DiscountForm = { code: '', type: 'percent', value: null, active: true };
-  resetDiscountForm(): void { this.discountForm = { code: '', type: 'percent', value: null, active: true }; }
-  editDiscount(d: Discount): void { this.discountForm = { code: d.code, type: d.type, value: d.value, active: d.active }; }
+  discountForm: DiscountForm = this.emptyDiscountForm();
+  private emptyDiscountForm(): DiscountForm {
+    return { code: '', type: 'percent', value: null, active: true, scope: 'both', minSpend: null, maxUses: null, expires: '' };
+  }
+  resetDiscountForm(): void { this.discountForm = this.emptyDiscountForm(); }
+  editDiscount(d: Discount): void {
+    this.discountForm = {
+      code: d.code, type: d.type, value: d.value, active: d.active,
+      scope: d.scope || 'both', minSpend: d.minSpend ?? null, maxUses: d.maxUses ?? null,
+      expires: d.expiresAt ? new Date(d.expiresAt).toISOString().slice(0, 10) : '',
+    };
+  }
   editingExisting(code: string): boolean { return this.shopSvc.discounts().some((d) => d.code === code.trim().toUpperCase()); }
   async saveDiscountForm(): Promise<void> {
     const code = this.discountForm.code.trim().toUpperCase();
     const value = this.numOrNull(this.discountForm.value);
     if (!code || value == null) { this.showToast('Code and value are required'); return; }
+    const existing = this.shopSvc.discounts().find((x) => x.code === code);
+    const expiresAt = this.discountForm.expires ? new Date(this.discountForm.expires + 'T23:59:59').getTime() : null;
     try {
-      await this.shopSvc.saveDiscount({ code, type: this.discountForm.type, value, active: this.discountForm.active });
+      await this.shopSvc.saveDiscount({
+        code, type: this.discountForm.type, value, active: this.discountForm.active,
+        scope: this.discountForm.scope, minSpend: this.numOrNull(this.discountForm.minSpend) ?? 0,
+        maxUses: this.numOrNull(this.discountForm.maxUses), expiresAt, usedCount: existing?.usedCount ?? 0,
+      });
       this.showToast('Discount saved');
       this.resetDiscountForm();
     } catch { this.showToast('Save failed — are you signed in?'); }
@@ -193,19 +223,38 @@ export class AppComponent {
     if (qty <= 0) { this.posCart.update((l) => l.filter((x) => x.product.id !== id)); return; }
     this.posCart.update((l) => l.map((x) => (x.product.id === id ? { ...x, qty } : x)));
   }
-  posClear(): void { this.posCart.set([]); this.posCustomer = ''; }
+  posClear(): void {
+    this.posCart.set([]); this.posCustomer = ''; this.posCash = null;
+    this.posDiscount.set(null); this.posPromo = ''; this.posPromoError.set(null);
+  }
+
+  async applyPosPromo(): Promise<void> {
+    const code = this.posPromo.trim().toUpperCase();
+    if (!code) return;
+    this.posPromoError.set(null);
+    const d = await this.shopSvc.getDiscount(code);
+    if (!d) { this.posDiscount.set(null); this.posPromoError.set('Code not found.'); return; }
+    const err = discountError(d, this.posSubtotal(), 'pos');
+    if (err) { this.posDiscount.set(null); this.posPromoError.set(err); return; }
+    this.posDiscount.set(d);
+  }
+  clearPosPromo(): void { this.posDiscount.set(null); this.posPromo = ''; this.posPromoError.set(null); }
 
   async posCheckout(): Promise<void> {
     const lines = this.posCart();
     if (!lines.length) return;
     const items = lines.map((l) => ({ productId: l.product.id, name: l.product.name, size: l.product.size, price: this.effPrice(l.product), qty: l.qty }));
     const subtotal = this.posSubtotal();
+    const disc = this.posDiscountAmount();
+    const appliedCode = this.posDiscount()?.code;
     try {
       const ref = await this.shopSvc.createPosOrder({
-        items, subtotal, total: subtotal, customerName: this.posCustomer.trim(),
+        items, subtotal, total: this.posTotal(), customerName: this.posCustomer.trim(),
         paymentMethod: this.posPayment(), status: 'fulfilled',
+        discountCode: appliedCode, discountAmount: disc,
       });
       await this.shopSvc.decrementStockForOrder(items);
+      if (appliedCode && disc > 0) await this.shopSvc.incrementDiscountUse(appliedCode);
       this.showToast(`Sale recorded · ${ref}`);
       this.posClear();
     } catch {

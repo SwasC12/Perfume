@@ -93,11 +93,18 @@ export interface CustomerProfile {
   updatedAt: number;
 }
 
+export type DiscountScope = 'online' | 'pos' | 'both';
+
 export interface Discount {
   code: string; // stored uppercase; also the doc id
   type: 'percent' | 'fixed';
   value: number;
   active: boolean;
+  scope?: DiscountScope; // where the code may be used (default 'both')
+  minSpend?: number; // minimum subtotal to qualify
+  maxUses?: number | null; // total redemption limit (null = unlimited)
+  usedCount?: number; // times redeemed
+  expiresAt?: number | null; // epoch ms; null = no expiry
   updatedAt?: number;
 }
 

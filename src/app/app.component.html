@@ -665,13 +665,38 @@
               <label class="pos-field">Customer (optional)
                 <input type="text" [(ngModel)]="posCustomer" name="posCust" placeholder="Walk-in" />
               </label>
+
+              <label class="pos-field">Promo code</label>
+              <div class="promo-row">
+                <input type="text" [(ngModel)]="posPromo" name="posPromo" placeholder="Code" style="text-transform:uppercase" />
+                @if (posDiscount()) {
+                  <button class="btn" (click)="clearPosPromo()">Remove</button>
+                } @else {
+                  <button class="btn" (click)="applyPosPromo()" [disabled]="!posPromo.trim()">Apply</button>
+                }
+              </div>
+              @if (posPromoError()) { <p class="form-error">{{ posPromoError() }}</p> }
+
               <div class="pos-pay">
                 @for (m of ['cash','card','eft']; track m) {
                   <button class="chip" [class.active]="posPayment() === m" (click)="posPayment.set($any(m))">{{ m }}</button>
                 }
               </div>
-              <div class="pos-total"><span>Total</span><strong>{{ price(posSubtotal()) }}</strong></div>
-              <button class="btn primary big" (click)="posCheckout()">Complete sale</button>
+
+              <div class="pos-summary">
+                <div class="sum-line"><span>Subtotal</span><span>{{ price(posSubtotal()) }}</span></div>
+                @if (posDiscountAmount() > 0) { <div class="sum-line"><span>Discount ({{ posDiscount()!.code }})</span><span>−{{ price(posDiscountAmount()) }}</span></div> }
+                <div class="pos-total"><span>Total</span><strong>{{ price(posTotal()) }}</strong></div>
+              </div>
+
+              @if (posPayment() === 'cash') {
+                <label class="pos-field">Cash received
+                  <input type="number" min="0" [(ngModel)]="posCash" name="posCash" placeholder="0" />
+                </label>
+                @if (posCash) { <div class="pos-change"><span>Change</span><strong>{{ price(posChange()) }}</strong></div> }
+              }
+
+              <button class="btn primary big" (click)="posCheckout()">Complete sale · {{ price(posTotal()) }}</button>
               <button class="btn" (click)="posClear()">Clear</button>
             }
           </aside>
@@ -736,6 +761,20 @@
             </div>
             <div class="row2">
               <label>Value ({{ discountForm.type === 'percent' ? '%' : 'R' }}) <input type="number" min="0" [(ngModel)]="discountForm.value" name="dval" /></label>
+              <label>Where it works
+                <select [(ngModel)]="discountForm.scope" name="dscope" class="sort-select" style="width:100%">
+                  <option value="both">Online &amp; POS</option>
+                  <option value="online">Online only</option>
+                  <option value="pos">POS only (markets)</option>
+                </select>
+              </label>
+            </div>
+            <div class="row2">
+              <label>Min spend (R, optional) <input type="number" min="0" [(ngModel)]="discountForm.minSpend" name="dmin" placeholder="none" /></label>
+              <label>Max uses (optional) <input type="number" min="0" [(ngModel)]="discountForm.maxUses" name="dmax" placeholder="unlimited" /></label>
+            </div>
+            <div class="row2">
+              <label>Expires (optional) <input type="date" [(ngModel)]="discountForm.expires" name="dexp" /></label>
               <label class="chk inline2"><input type="checkbox" [(ngModel)]="discountForm.active" name="dact" /> Active</label>
             </div>
             <div class="modal-actions">
@@ -747,12 +786,18 @@
           @if (shopSvc.discounts().length) {
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th>Code</th><th>Discount</th><th>Status</th><th></th></tr></thead>
+                <thead><tr><th>Code</th><th>Discount</th><th>Where</th><th>Rules</th><th>Used</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                   @for (d of shopSvc.discounts(); track d.code) {
                     <tr>
                       <td><strong>{{ d.code }}</strong></td>
                       <td>{{ d.type === 'percent' ? d.value + '% off' : price(d.value) + ' off' }}</td>
+                      <td>{{ d.scope === 'online' ? 'Online' : d.scope === 'pos' ? 'POS' : 'Both' }}</td>
+                      <td class="rules-cell">
+                        @if (d.minSpend) { <span>min {{ price(d.minSpend) }}</span> }
+                        @if (d.expiresAt) { <span>exp {{ orderDate(d.expiresAt) }}</span> }
+                      </td>
+                      <td>{{ d.usedCount || 0 }}{{ d.maxUses ? '/' + d.maxUses : '' }}</td>
                       <td><span class="status-pill" [attr.data-status]="d.active ? 'paid' : ''">{{ d.active ? 'active' : 'off' }}</span></td>
                       <td class="table-actions">
                         <button class="mini-btn" (click)="editDiscount(d)">Edit</button>

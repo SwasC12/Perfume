@@ -10,7 +10,7 @@ import {
   orderBy,
   Unsubscribe,
 } from 'firebase/firestore';
-import { getDoc, setDoc } from 'firebase/firestore';
+import { getDoc, setDoc, increment } from 'firebase/firestore';
 import { getDb } from './firebase';
 import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest } from './models';
 
@@ -126,10 +126,21 @@ export class ShopAdminService {
   // ---- Discounts ----
   async saveDiscount(d: Discount): Promise<void> {
     const code = d.code.trim().toUpperCase();
-    await setDoc(doc(getDb(), 'discounts', code), { type: d.type, value: d.value, active: d.active, updatedAt: Date.now() });
+    await setDoc(doc(getDb(), 'discounts', code), {
+      type: d.type, value: d.value, active: d.active,
+      scope: d.scope ?? 'both', minSpend: d.minSpend ?? 0, maxUses: d.maxUses ?? null,
+      usedCount: d.usedCount ?? 0, expiresAt: d.expiresAt ?? null, updatedAt: Date.now(),
+    });
   }
   async deleteDiscount(code: string): Promise<void> {
     await deleteDoc(doc(getDb(), 'discounts', code));
+  }
+  async getDiscount(code: string): Promise<Discount | null> {
+    const s = await getDoc(doc(getDb(), 'discounts', code.trim().toUpperCase()));
+    return s.exists() ? { code: s.id, ...(s.data() as Omit<Discount, 'code'>) } : null;
+  }
+  async incrementDiscountUse(code: string): Promise<void> {
+    try { await updateDoc(doc(getDb(), 'discounts', code.trim().toUpperCase()), { usedCount: increment(1) }); } catch { /* non-fatal */ }
   }
 
   // ---- Site content (CMS) ----
@@ -162,6 +173,7 @@ export class ShopAdminService {
   async createPosOrder(data: {
     items: OrderItem[]; subtotal: number; total: number;
     customerName: string; paymentMethod: string; status: OrderStatus;
+    discountCode?: string; discountAmount?: number;
   }): Promise<string> {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const reference = 'KF-' + Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -170,7 +182,10 @@ export class ShopAdminService {
       reference, uid: null, channel: 'pos', paymentMethod: data.paymentMethod,
       customer: { name: data.customerName || 'Walk-in', email: '', phone: '' },
       deliveryMethod: 'collection', deliveryFee: 0,
-      subtotal: data.subtotal, items: data.items, total: data.total,
+      subtotal: data.subtotal,
+      discountCode: data.discountAmount ? data.discountCode : undefined,
+      discountAmount: data.discountAmount || undefined,
+      stage: 'shipped', items: data.items, total: data.total,
       status: data.status, createdAt: now, updatedAt: now,
     });
     try {
