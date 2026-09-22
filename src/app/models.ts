@@ -112,6 +112,8 @@ export interface RestockRequest {
 
 export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
 export type DeliveryMethod = 'delivery' | 'collection';
+export type FulfilStage = 'placed' | 'mixed' | 'labelled' | 'packaged' | 'shipped';
+export const FULFIL_STAGES: FulfilStage[] = ['placed', 'mixed', 'labelled', 'packaged', 'shipped'];
 
 export interface Order {
   id: string;
@@ -127,6 +129,7 @@ export interface Order {
   items: OrderItem[];
   total: number;
   status: OrderStatus;
+  stage?: FulfilStage;
   channel?: 'online' | 'pos';
   paymentMethod?: string; // cash | card | eft
   createdAt: number;

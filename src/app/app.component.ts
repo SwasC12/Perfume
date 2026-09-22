@@ -10,6 +10,8 @@ import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
+import QRCode from 'qrcode';
+import { FULFIL_STAGES, FulfilStage } from './models';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts';
@@ -111,6 +113,8 @@ export class AppComponent {
 
   // ---- Order detail ----
   selectedOrder = signal<Order | null>(null);
+  qrDataUrl = signal<string | null>(null);
+  readonly stages = FULFIL_STAGES;
 
   // ---- POS ----
   readonly posCart = signal<PosLine[]>([]);
@@ -857,8 +861,27 @@ export class AppComponent {
   }
 
   // ---------- Order detail / export ----------
-  openOrderDetail(o: Order): void { this.selectedOrder.set(o); }
+  openOrderDetail(o: Order): void {
+    this.selectedOrder.set(o);
+    this.qrDataUrl.set(null);
+    QRCode.toDataURL(`KF-ORDER:${o.reference}`, { margin: 1, width: 200, color: { dark: '#141210', light: '#ffffff' } })
+      .then((url) => this.qrDataUrl.set(url))
+      .catch(() => {});
+  }
   printInvoice(): void { setTimeout(() => window.print(), 50); }
+
+  stageIndex(o: Order): number { return FULFIL_STAGES.indexOf((o.stage || 'placed') as FulfilStage); }
+  async setStage(o: Order, stage: FulfilStage): Promise<void> {
+    try {
+      await this.shopSvc.setOrderStage(o.id, stage);
+      this.selectedOrder.set({ ...o, stage });
+      if (stage === 'shipped' && o.status !== 'fulfilled' && o.status !== 'cancelled') {
+        await this.shopSvc.setOrderStatus(o, 'fulfilled');
+        this.emailSvc.status(o, 'fulfilled');
+      }
+      this.showToast(`Stage: ${stage}`);
+    } catch { this.showToast('Update failed'); }
+  }
 
   exportOrdersCsv(): void {
     const rows = [['Reference', 'Date', 'Status', 'Customer', 'Email', 'Phone', 'Method', 'Delivery', 'Items', 'Total']];

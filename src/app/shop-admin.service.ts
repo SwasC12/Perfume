@@ -208,4 +208,8 @@ export class ShopAdminService {
   async deleteOrder(id: string): Promise<void> {
     await deleteDoc(doc(getDb(), 'orders', id));
   }
+
+  async setOrderStage(id: string, stage: string): Promise<void> {
+    await updateDoc(doc(getDb(), 'orders', id), { stage, updatedAt: Date.now() });
+  }
 }

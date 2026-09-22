@@ -363,7 +363,10 @@
                     <span class="order-ref">{{ o.reference }}</span>
                     <span class="order-date">{{ orderDate(o.createdAt) }}</span>
                   </div>
-                  <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+                  <div class="order-pills">
+                    <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+                    @if (o.stage && o.stage !== 'placed') { <span class="stage-pill">{{ o.stage }}</span> }
+                  </div>
                 </div>
                 <div class="order-customer">
                   <strong>{{ o.customer.name }}</strong>
@@ -1050,6 +1053,8 @@
               <div><strong>{{ o.reference }}</strong></div>
               <div>{{ orderDateTime(o.createdAt) }}</div>
               <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
+              @if (o.channel === 'pos') { <span class="status-pill">POS</span> }
+              @if (qrDataUrl()) { <img class="inv-qr" [src]="qrDataUrl()" alt="Order QR code" /> }
             </div>
           </div>
 
@@ -1079,14 +1084,27 @@
           <div class="inv-totals">
             @if (o.subtotal != null) { <div><span>Subtotal</span><span>{{ price(o.subtotal) }}</span></div> }
             <div><span>{{ o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</span><span>{{ (o.deliveryFee || 0) === 0 ? 'Free' : price(o.deliveryFee!) }}</span></div>
+            @if (o.discountAmount) { <div><span>Discount ({{ o.discountCode }})</span><span>−{{ price(o.discountAmount) }}</span></div> }
             <div class="inv-grand"><span>Total</span><span>{{ price(o.total) }}</span></div>
           </div>
           <p class="inv-foot">Payment by EFT · reference <strong>{{ o.reference }}</strong> · Kauā Fragrances</p>
         </div>
 
+        <div class="stage-steps no-print">
+          <div class="stage-label">Fulfilment — tap a step to update</div>
+          <div class="stage-row">
+            @for (s of stages; track s; let i = $index) {
+              <button class="stage" [class.done]="stageIndex(o) >= i" [class.current]="stageIndex(o) === i" (click)="setStage(o, s)">
+                <span class="stage-dot">@if (stageIndex(o) > i) { <app-icon name="check" [size]="13" /> } @else { {{ i + 1 }} }</span>
+                {{ s }}
+              </button>
+            }
+          </div>
+        </div>
+
         <div class="modal-actions no-print">
           <button class="btn" (click)="selectedOrder.set(null)">Close</button>
-          <button class="btn primary" (click)="printInvoice()">Print invoice</button>
+          <button class="btn primary" (click)="printInvoice()">Print packing slip</button>
         </div>
       </div>
     </div>
