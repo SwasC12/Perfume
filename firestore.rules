@@ -36,8 +36,10 @@ service cloud.firestore {
 
     // Public order-status lookup (by reference) for the Track page.
     // Created when an order is placed; only the admin changes it afterwards.
+    // get = look up one known reference (public); list = enumerate all (admin only).
     match /orderStatus/{ref} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isAdmin();
       allow create: if request.resource.data.status == 'pending';
       allow update, delete: if isAdmin();
     }
@@ -48,10 +50,12 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Discount / promo codes — public read (to validate at checkout), admin write.
+    // Discount / promo codes — a shopper can validate a code they already know
+    // (get), but nobody can enumerate every code (list = admin only). Admin writes.
     // Anyone may increment usedCount by exactly 1 (redemption tracking); nothing else.
     match /discounts/{code} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isAdmin();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount'])
@@ -63,6 +67,8 @@ service cloud.firestore {
     match /restockRequests/{id} {
       allow create: if request.resource.data.notified == false
         && request.resource.data.email is string
+        && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+        && request.resource.data.email.size() < 200
         && request.resource.data.productId is string;
       allow read, update, delete: if isAdmin();
     }
