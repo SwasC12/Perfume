@@ -349,6 +349,7 @@
           @for (f of ['all','pending','paid','fulfilled','cancelled']; track f) {
             <button class="chip" [class.active]="orderFilter() === f" (click)="orderFilter.set($any(f))">{{ f }}</button>
           }
+          <button class="btn export-btn" (click)="openScanner()"><app-icon name="qr" [size]="16" /> Scan order</button>
           @if (shopSvc.orders().length) {
             <button class="btn export-btn" (click)="exportOrdersCsv()">Export CSV</button>
           }
@@ -1229,6 +1230,29 @@
         <div class="modal-actions no-print">
           <button class="btn" (click)="selectedOrder.set(null)">Close</button>
           <button class="btn primary" (click)="printInvoice()">Print packing slip</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ============ ORDER SCANNER ============ -->
+  @if (scannerOpen()) {
+    <div class="overlay" (click)="closeScanner()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <h2>Scan order QR</h2>
+        <p class="scan-hint">Point the camera at the QR on the order slip to pull it up.</p>
+        <div class="scanner">
+          <video id="scanVideo" muted playsinline></video>
+          <div class="scan-frame"></div>
+        </div>
+        @if (scanError()) { <p class="scan-error">{{ scanError() }}</p> }
+        <label>Or enter the reference
+          <input type="text" [(ngModel)]="scanManual" name="scanManual" placeholder="KF-ABCDE"
+                 style="text-transform:uppercase" (keyup.enter)="submitManualScan()" />
+        </label>
+        <div class="modal-actions">
+          <button class="btn" (click)="closeScanner()">Close</button>
+          <button class="btn primary" (click)="submitManualScan()">Find order</button>
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import { IconComponent } from './icon.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
 import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
@@ -997,6 +998,99 @@ export class AppComponent {
         catch { this.showToast('Delete failed'); }
       },
     });
+  }
+
+  // ---------- Order QR scanner (dispatch) ----------
+  readonly scannerOpen = signal(false);
+  readonly scanError = signal<string | null>(null);
+  scanManual = '';
+  private scanStream?: MediaStream;
+  private scanRAF?: number;
+  private scanCanvas?: HTMLCanvasElement;
+  private scanPaused = false;
+
+  async openScanner(): Promise<void> {
+    this.scanError.set(null);
+    this.scanManual = '';
+    this.scanPaused = false;
+    this.scannerOpen.set(true);
+    await new Promise((r) => setTimeout(r, 0)); // let the modal render
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.scanError.set('Camera not available on this device — enter the reference below.');
+      return;
+    }
+    try {
+      this.scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    } catch {
+      this.scanError.set('Camera blocked — allow access, or enter the reference below.');
+      return;
+    }
+    const video = document.getElementById('scanVideo') as HTMLVideoElement | null;
+    if (!video) return;
+    video.srcObject = this.scanStream;
+    video.setAttribute('playsinline', 'true');
+    try { await video.play(); } catch { /* ignore */ }
+    this.scanLoop(video);
+  }
+
+  private scanLoop(video: HTMLVideoElement): void {
+    const canvas = this.scanCanvas ?? (this.scanCanvas = document.createElement('canvas'));
+    const tick = () => {
+      if (!this.scannerOpen()) return;
+      if (!this.scanPaused && video.readyState >= video.HAVE_ENOUGH_DATA && video.videoWidth) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          if (code && code.data) { this.onScanResult(code.data); }
+        }
+      }
+      this.scanRAF = requestAnimationFrame(tick);
+    };
+    this.scanRAF = requestAnimationFrame(tick);
+  }
+
+  private parseOrderRef(text: string): string | null {
+    const t = (text || '').trim();
+    const m = t.match(/^KF-ORDER:(.+)$/i);
+    if (m) return m[1].trim().toUpperCase();
+    if (/^KF-[A-Z0-9]+$/i.test(t)) return t.toUpperCase();
+    return null;
+  }
+
+  private onScanResult(text: string): void {
+    const ref = this.parseOrderRef(text);
+    const order = ref ? this.shopSvc.orders().find((o) => o.reference === ref) : null;
+    if (!order) {
+      // Pause briefly so we don't spam the same failed read every frame.
+      this.scanPaused = true;
+      this.scanError.set(`No order found for "${ref || text.slice(0, 24)}".`);
+      setTimeout(() => { this.scanPaused = false; }, 1500);
+      return;
+    }
+    this.closeScanner();
+    this.openOrderDetail(order);
+    this.showToast(`Order ${order.reference}`);
+  }
+
+  submitManualScan(): void {
+    const ref = this.parseOrderRef(this.scanManual) || this.scanManual.trim().toUpperCase();
+    if (!ref) { this.scanError.set('Enter an order reference.'); return; }
+    const order = this.shopSvc.orders().find((o) => o.reference === ref);
+    if (!order) { this.scanError.set(`No order found for "${ref}".`); return; }
+    this.closeScanner();
+    this.openOrderDetail(order);
+  }
+
+  closeScanner(): void {
+    this.scannerOpen.set(false);
+    if (this.scanRAF) cancelAnimationFrame(this.scanRAF);
+    this.scanRAF = undefined;
+    this.scanStream?.getTracks().forEach((t) => t.stop());
+    this.scanStream = undefined;
   }
 
   // ---------- Orders ----------

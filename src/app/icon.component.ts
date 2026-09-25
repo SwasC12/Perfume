@@ -99,6 +99,15 @@ import { Component, Input } from '@angular/core';
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         }
+        @case ('qr') {
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <line x1="14" y1="14" x2="14" y2="21" />
+          <line x1="18" y1="14" x2="21" y2="14" />
+          <line x1="21" y1="17" x2="21" y2="21" />
+          <line x1="17" y1="21" x2="18" y2="21" />
+        }
         @case ('tag') { <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /> }
         @case ('user') { <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /> }
         @case ('eye-off') {
