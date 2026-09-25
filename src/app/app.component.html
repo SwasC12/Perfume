@@ -29,6 +29,9 @@
         <button class="nav-item" [class.active]="tab() === 'discounts'" (click)="go('discounts')">
           <app-icon name="tag" [size]="18" /> Discounts <span class="count">{{ shopSvc.discounts().length }}</span>
         </button>
+        <button class="nav-item" [class.active]="tab() === 'budget'" (click)="go('budget')">
+          <app-icon name="chart" [size]="18" /> Budgeting
+        </button>
         <button class="nav-item" [class.active]="tab() === 'content'" (click)="go('content')">
           <app-icon name="store" [size]="18" /> Storefront
         </button>
@@ -192,6 +195,12 @@
           <input type="checkbox" [ngModel]="rumiInStockOnly()" (ngModelChange)="rumiInStockOnly.set($event)" />
           In stock only
         </label>
+        <select class="sort-select" [ngModel]="rumiSort()" (ngModelChange)="rumiSort.set($event)" aria-label="Sort Rumi list">
+          <option value="name">Name A–Z</option>
+          <option value="price-asc">Price: low to high</option>
+          <option value="price-desc">Price: high to low</option>
+          <option value="stock">In stock first</option>
+        </select>
         <button class="btn" (click)="openAddRumi()"><app-icon name="plus" [size]="16" /> Manual</button>
         <button class="btn primary" (click)="sync()" [disabled]="rumiSvc.loading()">
           @if (rumiSvc.loading()) { <span class="spin"></span> Syncing… } @else { <app-icon name="refresh" [size]="16" /> Sync from Rumi }
@@ -355,6 +364,14 @@
           }
         </div>
 
+        @if (selectedForPrint().size > 0) {
+          <div class="batch-bar">
+            <span>{{ selectedForPrint().size }} selected</span>
+            <button class="btn primary" (click)="batchPrintSlips()"><app-icon name="receipt" [size]="16" /> Print {{ selectedForPrint().size }} slips</button>
+            <button class="btn" (click)="clearPrintSelection()">Clear</button>
+          </div>
+        }
+
         @if (shopSvc.loadingOrders() && shopSvc.orders().length === 0) {
           <div class="notice">Loading orders…</div>
         } @else if (filteredOrders().length === 0) {
@@ -368,9 +385,14 @@
             @for (o of filteredOrders(); track o.id) {
               <article class="order-card" [attr.data-status]="o.status">
                 <div class="order-head">
-                  <div>
-                    <span class="order-ref">{{ o.reference }}</span>
-                    <span class="order-date">{{ orderDate(o.createdAt) }}</span>
+                  <div class="order-head-left">
+                    <label class="print-check" title="Select for batch print">
+                      <input type="checkbox" [checked]="isSelectedForPrint(o.id)" (change)="toggleSelectForPrint(o.id)" />
+                    </label>
+                    <div>
+                      <span class="order-ref">{{ o.reference }}</span>
+                      <span class="order-date">{{ orderDate(o.createdAt) }}</span>
+                    </div>
                   </div>
                   <div class="order-pills">
                     <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
@@ -499,6 +521,12 @@
           <div class="kpi"><span class="kpi-label">Awaiting payment</span><span class="kpi-value">{{ kpiPending() }}</span></div>
           <div class="kpi"><span class="kpi-label">Paid, to fulfil</span><span class="kpi-value">{{ kpiPaid() }}</span></div>
         </div>
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-label">Gross profit (all time)</span><span class="kpi-value">{{ price(kpiGrossProfit()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Expenses</span><span class="kpi-value">{{ price(expensesTotal()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Net profit</span><span class="kpi-value">{{ price(kpiNetProfit()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Stock value (cost)</span><span class="kpi-value">{{ price(inventoryCostValue()) }}</span></div>
+        </div>
 
         <div class="dash-grid">
           <div class="editor-card">
@@ -514,10 +542,13 @@
           </div>
 
           <div class="editor-card">
-            <h3 class="editor-title">Low stock</h3>
-            @if (lowStock().length === 0) { <p class="editor-hint">Nothing low. 👍 (products with 5 or fewer show here)</p> }
-            @for (p of lowStock(); track p.id) {
-              <div class="dash-row"><span>{{ p.name }}</span><span class="dim">{{ p.stockQty }} left</span></div>
+            <h3 class="editor-title">Reorder / what to mix</h3>
+            @if (reorderList().length === 0) { <p class="editor-hint">Nothing running low (5 or fewer in stock shows here).</p> }
+            @for (r of reorderList(); track r.product.id) {
+              <button class="dash-row" (click)="openEditProduct(r.product); tab.set('products')">
+                <span>{{ r.product.name }}</span>
+                <span class="dim">{{ r.product.stockQty }} left · {{ r.sold }} sold</span>
+              </button>
             }
           </div>
 
@@ -590,6 +621,96 @@
         <div class="modal-actions" style="margin-top:18px">
           <button class="btn primary" (click)="saveImages()" [disabled]="imagesSaving()">{{ imagesSaving() ? 'Saving…' : 'Save images' }}</button>
         </div>
+      }
+    </section>
+  }
+
+  <!-- ============ BUDGETING (admin) ============ -->
+  @if (tab() === 'budget') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <!-- Profit (all-time) -->
+        <div class="kpi-row">
+          <div class="kpi"><span class="kpi-label">Revenue</span><span class="kpi-val">{{ price(kpiRevenue()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Cost of goods</span><span class="kpi-val">{{ price(kpiCogs()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Gross profit</span><span class="kpi-val">{{ price(kpiGrossProfit()) }}</span></div>
+          <div class="kpi"><span class="kpi-label">Expenses</span><span class="kpi-val">{{ price(expensesTotal()) }}</span></div>
+          <div class="kpi accent"><span class="kpi-label">Net profit</span><span class="kpi-val">{{ price(kpiNetProfit()) }}</span></div>
+        </div>
+
+        <!-- Inventory valuation -->
+        <div class="panel">
+          <h3 class="panel-title">Inventory on hand</h3>
+          <div class="inv-val-row">
+            <div><span class="dim">Cost value</span><strong>{{ price(inventoryCostValue()) }}</strong></div>
+            <div><span class="dim">Retail value</span><strong>{{ price(inventoryRetailValue()) }}</strong></div>
+            <div><span class="dim">Potential profit</span><strong>{{ price(inventoryRetailValue() - inventoryCostValue()) }}</strong></div>
+          </div>
+          <p class="editor-hint">Set a “Cost per unit” on each product for these to be accurate.</p>
+        </div>
+
+        <!-- Month picker + this month -->
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">This month</h3>
+            <input type="month" [ngModel]="budgetMonth()" (ngModelChange)="budgetMonth.set($event)" name="bmonth" class="month-input" />
+          </div>
+          <div class="kpi-row tight">
+            <div class="kpi"><span class="kpi-label">Income</span><span class="kpi-val">{{ price(monthIncome()) }}</span></div>
+            <div class="kpi"><span class="kpi-label">Cost of goods</span><span class="kpi-val">{{ price(monthCogs()) }}</span></div>
+            <div class="kpi"><span class="kpi-label">Expenses</span><span class="kpi-val">{{ price(monthExpensesTotal()) }}</span></div>
+            <div class="kpi accent"><span class="kpi-label">Net</span><span class="kpi-val">{{ price(monthNet()) }}</span></div>
+          </div>
+          @if (monthExpenseByCategory().length) {
+            <div class="cat-breakdown">
+              @for (c of monthExpenseByCategory(); track c.category) {
+                <span class="cat-chip">{{ c.category }} · {{ price(c.amount) }}</span>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Add expense -->
+        <div class="panel">
+          <h3 class="panel-title">Add an expense</h3>
+          <div class="expense-form">
+            <input type="date" [(ngModel)]="expenseForm.date" name="edate" />
+            <select [(ngModel)]="expenseForm.category" name="ecat" class="sort-select">
+              @for (c of expenseCategories; track c) { <option [value]="c">{{ c }}</option> }
+            </select>
+            <input type="text" [(ngModel)]="expenseForm.description" name="edesc" placeholder="Description (optional)" />
+            <input type="number" min="0" step="0.01" [(ngModel)]="expenseForm.amount" name="eamt" placeholder="Amount (R)" />
+            <button class="btn primary" (click)="addExpense()">Add</button>
+          </div>
+        </div>
+
+        <!-- Expense list for the month -->
+        @if (monthExpensesList().length) {
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr></thead>
+              <tbody>
+                @for (e of monthExpensesList(); track e.id) {
+                  <tr>
+                    <td>{{ orderDate(e.date) }}</td>
+                    <td>{{ e.category }}</td>
+                    <td class="dim">{{ e.description || '—' }}</td>
+                    <td><strong>{{ price(e.amount) }}</strong></td>
+                    <td class="table-actions"><button class="icon" (click)="askDeleteExpense(e)"><app-icon name="trash" [size]="16" /></button></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="editor-hint">No expenses logged for this month yet.</p>
+        }
       }
     </section>
   }
@@ -667,6 +788,13 @@
           <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
         </div>
       } @else {
+        @if (pendingSyncCount() > 0) {
+          <div class="offline-banner">
+            <app-icon name="refresh" [size]="16" />
+            {{ pendingSyncCount() }} sale{{ pendingSyncCount() === 1 ? '' : 's' }} saved offline
+            <button class="mini-btn ok" (click)="flushPosQueue()" [disabled]="syncing()">{{ syncing() ? 'Syncing…' : 'Sync now' }}</button>
+          </div>
+        }
         <div class="pos">
           <div class="pos-picker">
             <input class="search" type="search" placeholder="Search products to add…"
@@ -744,6 +872,37 @@
               <button class="btn" (click)="posClear()">Clear</button>
             }
           </aside>
+        </div>
+
+        <!-- Market cash-up -->
+        <div class="panel cashup">
+          <div class="panel-head">
+            <h3 class="panel-title">Cash-up</h3>
+            <input type="date" [ngModel]="cashupDate()" (ngModelChange)="cashupDate.set($event)" name="cashupDate" />
+          </div>
+          <div class="kpi-row tight">
+            <div class="kpi"><span class="kpi-label">Sales</span><span class="kpi-val">{{ cashupOrders().length }}</span></div>
+            <div class="kpi accent"><span class="kpi-label">Takings</span><span class="kpi-val">{{ price(cashupTotal()) }}</span></div>
+          </div>
+          @if (cashupByMethod().length) {
+            <div class="cashup-methods">
+              @for (m of cashupByMethod(); track m.method) {
+                <span class="cat-chip">{{ m.method }} · {{ m.count }} · {{ price(m.total) }}</span>
+              }
+            </div>
+          }
+          @if (cashupTopItems().length) {
+            <table class="data-table">
+              <thead><tr><th>Item</th><th>Qty</th><th>Total</th></tr></thead>
+              <tbody>
+                @for (i of cashupTopItems(); track i.name) {
+                  <tr><td>{{ i.name }}</td><td>{{ i.qty }}</td><td>{{ price(i.total) }}</td></tr>
+                }
+              </tbody>
+            </table>
+          } @else {
+            <p class="editor-hint">No till sales for this day.</p>
+          }
         </div>
       }
     </section>
@@ -1092,12 +1251,22 @@
             </label>
           </div>
           <div class="row">
+            <label>Cost per unit (R)
+              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.cost" name="pcost" placeholder="what it costs you" />
+            </label>
             <label>Size
               <input type="text" [(ngModel)]="productForm.size" name="psize" placeholder="e.g. 50ml" />
             </label>
+          </div>
+          <div class="row">
             <label>Stock quantity
               <input type="number" min="0" [(ngModel)]="productForm.stockQty" name="pqty" placeholder="optional" />
             </label>
+            @if (productForm.price && productForm.cost) {
+              <label>Margin
+                <input type="text" [value]="marginLabel(productForm.price, productForm.cost)" disabled />
+              </label>
+            }
           </div>
           <div class="row">
             <label>Category

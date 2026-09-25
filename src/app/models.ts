@@ -55,9 +55,24 @@ export interface Product {
   notesBase?: string;
   longDescription?: string;
   featured?: boolean;
+  cost?: number | null; // unit cost, for profit/margin + inventory valuation
+  ratingSum?: number;
+  ratingCount?: number;
   createdAt: number;
   updatedAt: number;
 }
+
+// Business expense / spend line for the Budgeting tab.
+export interface Expense {
+  id: string;
+  date: number; // epoch ms of the expense date
+  category: string; // e.g. Oils, Bottles, Packaging, Marketing, Rent, Other
+  description?: string;
+  amount: number; // ZAR
+  createdAt: number;
+}
+
+export const EXPENSE_CATEGORIES = ['Oils', 'Bottles', 'Packaging', 'Labels', 'Marketing', 'Market fees', 'Transport', 'Equipment', 'Other'];
 
 export interface OrderItem {
   productId: string;

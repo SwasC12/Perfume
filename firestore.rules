@@ -17,9 +17,28 @@ service cloud.firestore {
     }
 
     // Shop catalogue — anyone can read; only the admin can change it.
+    // Exception: a shopper posting a review may bump the cached rating aggregate
+    // (ratingSum/ratingCount) by one review's worth — nothing else.
     match /products/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum', 'ratingCount'])
+        && request.resource.data.ratingCount == resource.data.get('ratingCount', 0) + 1
+        && request.resource.data.ratingSum >= resource.data.get('ratingSum', 0) + 1
+        && request.resource.data.ratingSum <= resource.data.get('ratingSum', 0) + 5
+      );
+    }
+
+    // Product reviews — anyone can read and post a valid review; admin moderates.
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.rating is int
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && request.resource.data.productId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 60;
+      allow update, delete: if isAdmin();
     }
 
     // Editable storefront content (banners, hero, announcement) — public read, admin write.
@@ -85,6 +104,11 @@ service cloud.firestore {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.uid == request.auth.uid);
       allow update, delete: if isAdmin();
+    }
+
+    // Business expenses (Budgeting tab) — admin only, never public.
+    match /expenses/{id} {
+      allow read, write: if isAdmin();
     }
 
     function isAdmin() {

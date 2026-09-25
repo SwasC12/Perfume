@@ -15,11 +15,16 @@ import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget';
 
 interface PosLine { product: Product; qty: number; }
+interface PosSale {
+  items: OrderItem[]; subtotal: number; total: number;
+  customerName: string; paymentMethod: string; status: OrderStatus;
+  discountCode?: string; discountAmount?: number;
+}
 interface DiscountForm {
   code: string; type: 'percent' | 'fixed'; value: number | null; active: boolean;
   scope: 'online' | 'pos' | 'both'; minSpend: number | null; maxUses: number | null; expires: string;
@@ -60,6 +65,7 @@ interface ProductForm {
   size: string;
   price: number | null;
   salePrice: number | null;
+  cost: number | null;
   stockQty: number | null;
   inStock: boolean;
   active: boolean;
@@ -96,6 +102,7 @@ export class AppComponent {
   readonly wishSearch = signal('');
   readonly rumiSearch = signal('');
   readonly rumiInStockOnly = signal(false);
+  readonly rumiSort = signal<'name' | 'price-asc' | 'price-desc' | 'stock'>('name');
   readonly productSearch = signal('');
   readonly orderFilter = signal<'all' | OrderStatus>('all');
 
@@ -247,6 +254,11 @@ export class AppComponent {
         this.imagesLoaded = true;
       }
     });
+
+    // Offline POS queue: reflect any pending sales, and flush when back online.
+    this.pendingSyncCount.set(this.readQueue().length);
+    window.addEventListener('online', () => this.flushPosQueue());
+    effect(() => { if (this.authSvc.isAdmin && this.shopSvc.products().length) this.flushPosQueue(); });
   }
 
   go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }
@@ -362,27 +374,232 @@ export class AppComponent {
     const lines = this.posCart();
     if (!lines.length) return;
     const items = lines.map((l) => ({ productId: l.product.id, name: l.product.name, size: l.product.size, price: this.effPrice(l.product), qty: l.qty }));
-    const subtotal = this.posSubtotal();
     const disc = this.posDiscountAmount();
-    const appliedCode = this.posDiscount()?.code;
+    const sale = {
+      items, subtotal: this.posSubtotal(), total: this.posTotal(),
+      customerName: this.posCustomer.trim(), paymentMethod: this.posPayment(),
+      status: 'fulfilled' as OrderStatus,
+      discountCode: this.posDiscount()?.code, discountAmount: disc,
+    };
+    // Offline-first: if there's no connection, queue the sale and keep trading.
+    if (!navigator.onLine) {
+      this.queuePosSale(sale);
+      this.showToast('Offline — sale saved, will sync');
+      this.posClear();
+      return;
+    }
     try {
-      const ref = await this.shopSvc.createPosOrder({
-        items, subtotal, total: this.posTotal(), customerName: this.posCustomer.trim(),
-        paymentMethod: this.posPayment(), status: 'fulfilled',
-        discountCode: appliedCode, discountAmount: disc,
-      });
-      await this.shopSvc.decrementStockForOrder(items);
-      if (appliedCode && disc > 0) await this.shopSvc.incrementDiscountUse(appliedCode);
+      const ref = await this.commitPosSale(sale);
       this.showToast(`Sale recorded · ${ref}`);
       this.posClear();
     } catch {
-      this.showToast('Could not record sale — signed in?');
+      // Network hiccup mid-sale — don't lose it.
+      this.queuePosSale(sale);
+      this.showToast('Saved offline — will sync when back online');
+      this.posClear();
     }
+  }
+
+  /** Actually write a POS sale (order + stock + discount use). */
+  private async commitPosSale(sale: PosSale): Promise<string> {
+    const ref = await this.shopSvc.createPosOrder(sale);
+    await this.shopSvc.decrementStockForOrder(sale.items);
+    if (sale.discountCode && (sale.discountAmount || 0) > 0) await this.shopSvc.incrementDiscountUse(sale.discountCode);
+    return ref;
+  }
+
+  // ---- Offline POS queue ----
+  private readonly POS_QUEUE_KEY = 'kf_pos_queue';
+  readonly pendingSyncCount = signal(0);
+  readonly syncing = signal(false);
+  private readQueue(): PosSale[] {
+    try { return JSON.parse(localStorage.getItem(this.POS_QUEUE_KEY) || '[]'); } catch { return []; }
+  }
+  private writeQueue(q: PosSale[]): void {
+    try { localStorage.setItem(this.POS_QUEUE_KEY, JSON.stringify(q)); } catch { /* ignore */ }
+    this.pendingSyncCount.set(q.length);
+  }
+  private queuePosSale(sale: PosSale): void {
+    const q = this.readQueue(); q.push(sale); this.writeQueue(q);
+  }
+  async flushPosQueue(): Promise<void> {
+    if (this.syncing() || !navigator.onLine) return;
+    let q = this.readQueue();
+    if (!q.length) return;
+    this.syncing.set(true);
+    const remaining: PosSale[] = [];
+    for (const sale of q) {
+      try { await this.commitPosSale(sale); } catch { remaining.push(sale); }
+    }
+    this.writeQueue(remaining);
+    this.syncing.set(false);
+    const done = q.length - remaining.length;
+    if (done > 0) this.showToast(`Synced ${done} offline sale${done === 1 ? '' : 's'}`);
+  }
+
+  // ==================== Money / profit ====================
+  productCost(id: string): number {
+    return this.shopSvc.products().find((x) => x.id === id)?.cost ?? 0;
+  }
+  marginLabel(price: number | null, cost: number | null): string {
+    const pr = Number(price) || 0, c = Number(cost) || 0;
+    if (!pr) return '—';
+    const profit = pr - c;
+    return `R${profit.toFixed(0)} (${Math.round((profit / pr) * 100)}%)`;
+  }
+  private soldOrders(): Order[] {
+    return this.shopSvc.orders().filter((o) => o.status === 'paid' || o.status === 'fulfilled');
+  }
+  private orderCogs(o: Order): number {
+    return (o.items || []).reduce((s, i) => s + this.productCost(i.productId) * i.qty, 0);
+  }
+  readonly kpiRevenue = computed(() => this.soldOrders().reduce((s, o) => s + (o.total || 0), 0));
+  readonly kpiCogs = computed(() => this.soldOrders().reduce((s, o) => s + this.orderCogs(o), 0));
+  readonly kpiGrossProfit = computed(() => this.kpiRevenue() - this.kpiCogs());
+  readonly expensesTotal = computed(() => this.shopSvc.expenses().reduce((s, e) => s + (e.amount || 0), 0));
+  readonly kpiNetProfit = computed(() => this.kpiGrossProfit() - this.expensesTotal());
+  readonly inventoryCostValue = computed(() => this.shopSvc.products().reduce((s, p) => s + (p.cost || 0) * (p.stockQty || 0), 0));
+  readonly inventoryRetailValue = computed(() => this.shopSvc.products().reduce((s, p) => s + this.effPrice(p) * (p.stockQty || 0), 0));
+
+  // ==================== Budgeting ====================
+  expenseCategories = EXPENSE_CATEGORIES;
+  budgetMonth = signal(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  expenseForm: { date: string; category: string; description: string; amount: number | null } = this.emptyExpenseForm();
+  private emptyExpenseForm() {
+    return { date: new Date().toISOString().slice(0, 10), category: 'Oils', description: '', amount: null as number | null };
+  }
+  private monthRange(m: string): [number, number] {
+    const [y, mo] = m.split('-').map(Number);
+    return [new Date(y, mo - 1, 1).getTime(), new Date(y, mo, 1).getTime()];
+  }
+  readonly monthExpensesList = computed(() => {
+    const [s, e] = this.monthRange(this.budgetMonth());
+    return this.shopSvc.expenses().filter((x) => x.date >= s && x.date < e);
+  });
+  readonly monthExpensesTotal = computed(() => this.monthExpensesList().reduce((s, x) => s + (x.amount || 0), 0));
+  readonly monthIncome = computed(() => {
+    const [s, e] = this.monthRange(this.budgetMonth());
+    return this.soldOrders().filter((o) => o.createdAt >= s && o.createdAt < e).reduce((sum, o) => sum + (o.total || 0), 0);
+  });
+  readonly monthCogs = computed(() => {
+    const [s, e] = this.monthRange(this.budgetMonth());
+    return this.soldOrders().filter((o) => o.createdAt >= s && o.createdAt < e).reduce((sum, o) => sum + this.orderCogs(o), 0);
+  });
+  readonly monthNet = computed(() => this.monthIncome() - this.monthCogs() - this.monthExpensesTotal());
+  readonly monthExpenseByCategory = computed(() => {
+    const map: Record<string, number> = {};
+    for (const x of this.monthExpensesList()) map[x.category] = (map[x.category] || 0) + (x.amount || 0);
+    return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  });
+  async addExpense(): Promise<void> {
+    const amount = this.numOrNull(this.expenseForm.amount);
+    if (amount == null || amount <= 0) { this.showToast('Enter an amount'); return; }
+    try {
+      await this.shopSvc.addExpense({
+        date: new Date(this.expenseForm.date + 'T12:00:00').getTime(),
+        category: this.expenseForm.category,
+        description: this.expenseForm.description.trim() || undefined,
+        amount,
+      });
+      this.showToast('Expense added');
+      this.expenseForm = this.emptyExpenseForm();
+    } catch { this.showToast('Save failed — signed in?'); }
+  }
+  askDeleteExpense(e: Expense): void {
+    this.confirm.set({
+      message: `Delete this ${this.price(e.amount)} expense?`,
+      action: async () => { try { await this.shopSvc.deleteExpense(e.id); this.showToast('Expense deleted'); } catch { this.showToast('Delete failed'); } },
+    });
+  }
+
+  // ==================== Market cash-up ====================
+  cashupDate = signal(new Date().toISOString().slice(0, 10));
+  private cashupRange(): [number, number] {
+    const [y, m, d] = this.cashupDate().split('-').map(Number);
+    return [new Date(y, m - 1, d).getTime(), new Date(y, m - 1, d + 1).getTime()];
+  }
+  readonly cashupOrders = computed(() => {
+    const [s, e] = this.cashupRange();
+    return this.shopSvc.orders().filter((o) => o.channel === 'pos' && o.createdAt >= s && o.createdAt < e);
+  });
+  readonly cashupTotal = computed(() => this.cashupOrders().reduce((s, o) => s + (o.total || 0), 0));
+  readonly cashupByMethod = computed(() => {
+    const map: Record<string, { count: number; total: number }> = {};
+    for (const o of this.cashupOrders()) {
+      const k = o.paymentMethod || 'other';
+      (map[k] ||= { count: 0, total: 0 });
+      map[k].count++; map[k].total += o.total || 0;
+    }
+    return Object.entries(map).map(([method, v]) => ({ method, ...v }));
+  });
+  readonly cashupTopItems = computed(() => {
+    const map: Record<string, { name: string; qty: number; total: number }> = {};
+    for (const o of this.cashupOrders()) for (const i of o.items || []) {
+      (map[i.productId] ||= { name: i.name, qty: 0, total: 0 });
+      map[i.productId].qty += i.qty; map[i.productId].total += i.price * i.qty;
+    }
+    return Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, 8);
+  });
+
+  // ==================== Reorder / what to mix ====================
+  readonly reorderList = computed(() => {
+    const soldQty: Record<string, number> = {};
+    for (const o of this.soldOrders()) for (const i of o.items || []) soldQty[i.productId] = (soldQty[i.productId] || 0) + i.qty;
+    return this.shopSvc.products()
+      .filter((p) => p.stockQty != null && p.stockQty <= 5)
+      .map((p) => ({ product: p, sold: soldQty[p.id] || 0 }))
+      .sort((a, b) => (a.product.stockQty! - b.product.stockQty!) || (b.sold - a.sold));
+  });
+
+  // ==================== Batch packing slips ====================
+  selectedForPrint = signal<Set<string>>(new Set());
+  isSelectedForPrint(id: string): boolean { return this.selectedForPrint().has(id); }
+  toggleSelectForPrint(id: string): void {
+    this.selectedForPrint.update((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  clearPrintSelection(): void { this.selectedForPrint.set(new Set()); }
+  async batchPrintSlips(): Promise<void> {
+    const ids = this.selectedForPrint();
+    const orders = this.shopSvc.orders().filter((o) => ids.has(o.id));
+    if (!orders.length) { this.showToast('Select orders to print'); return; }
+    const slips: string[] = [];
+    for (const o of orders) {
+      let qr = '';
+      try { qr = await QRCode.toDataURL(`KF-ORDER:${o.reference}`, { margin: 1, width: 120, color: { dark: '#141210', light: '#ffffff' } }); } catch { /* no qr */ }
+      slips.push(this.slipHtml(o, qr));
+    }
+    const w = window.open('', '_blank');
+    if (!w) { this.showToast('Allow pop-ups to print slips'); return; }
+    w.document.write(`<!doctype html><html><head><title>Packing slips</title><style>
+      *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
+      .slip{padding:18px;border-bottom:2px dashed #999;page-break-after:always}
+      .top{display:flex;justify-content:space-between;align-items:flex-start}
+      h2{margin:0 0 2px;font-size:18px}.ref{font-size:13px;color:#555}
+      table{width:100%;border-collapse:collapse;margin:10px 0}
+      td,th{text-align:left;padding:4px 0;border-bottom:1px solid #eee;font-size:13px}
+      .tot{font-weight:bold}.qr{width:96px;height:96px}
+      .cust{font-size:13px;margin:6px 0;color:#333}
+    </style></head><body>${slips.join('')}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+    this.clearPrintSelection();
+  }
+  private slipHtml(o: Order, qr: string): string {
+    const esc = (s: unknown) => String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
+    const rows = (o.items || []).map((i) => `<tr><td>${esc(i.name)}${i.size ? ' (' + esc(i.size) + ')' : ''}</td><td>${i.qty}</td><td>R${(i.price * i.qty).toFixed(0)}</td></tr>`).join('');
+    const c = o.customer || { name: '', email: '', phone: '' } as any;
+    return `<div class="slip"><div class="top"><div>
+      <h2>Kauā Fragrances</h2><div class="ref">Order ${esc(o.reference)} · ${new Date(o.createdAt).toLocaleDateString()}</div>
+      <div class="cust">${esc(c.name)}${c.phone ? ' · ' + esc(c.phone) : ''}<br>${esc(c.email)}</div>
+      </div>${qr ? `<img class="qr" src="${qr}" />` : ''}</div>
+      <table><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="tot">Total: R${(o.total || 0).toFixed(0)} · ${esc(o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery')}</div>
+    </div>`;
   }
 
   tabTitle(): string {
     switch (this.tab()) {
       case 'dashboard': return 'Dashboard';
+      case 'budget': return 'Budgeting';
       case 'oils': return 'My Oils';
       case 'wishlist': return 'Wishlist';
       case 'rumi': return 'Buy from Rumi';
@@ -497,11 +714,20 @@ export class AppComponent {
   readonly filteredRumi = computed<RumiProduct[]>(() => {
     const q = this.rumiSearch().trim().toLowerCase();
     const inStockOnly = this.rumiInStockOnly();
-    return this.rumiSvc
+    const sort = this.rumiSort();
+    const list = this.rumiSvc
       .products()
       .filter((p) => (inStockOnly ? p.inStock : true))
-      .filter((p) => (q ? p.name.toLowerCase().includes(q) : true))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((p) => (q ? p.name.toLowerCase().includes(q) : true));
+    const price = (p: RumiProduct) => (p.fromPrice == null ? Number.POSITIVE_INFINITY : p.fromPrice);
+    return [...list].sort((a, b) => {
+      switch (sort) {
+        case 'price-asc': return price(a) - price(b);
+        case 'price-desc': return (price(b) === Infinity ? -1 : price(b)) - (price(a) === Infinity ? -1 : price(a));
+        case 'stock': return Number(b.inStock) - Number(a.inStock) || a.name.localeCompare(b.name);
+        default: return a.name.localeCompare(b.name);
+      }
+    });
   });
 
   readonly filteredProducts = computed<Product[]>(() => {
@@ -784,6 +1010,7 @@ export class AppComponent {
       size: p.size ?? '',
       price: p.price,
       salePrice: p.salePrice ?? null,
+      cost: p.cost ?? null,
       stockQty: p.stockQty,
       inStock: p.inStock,
       active: p.active,
@@ -815,6 +1042,7 @@ export class AppComponent {
       size: this.productForm.size.trim() || undefined,
       price,
       salePrice: this.numOrNull(this.productForm.salePrice),
+      cost: this.numOrNull(this.productForm.cost),
       stockQty: this.numOrNull(this.productForm.stockQty),
       inStock: this.productForm.inStock,
       active: this.productForm.active,
@@ -1299,7 +1527,7 @@ export class AppComponent {
 
   private emptyProductForm(): ProductForm {
     return {
-      name: '', description: '', size: '', price: null, salePrice: null, stockQty: null,
+      name: '', description: '', size: '', price: null, salePrice: null, cost: null, stockQty: null,
       inStock: true, active: true, featured: false, imageUrl: '', gallery: [],
       category: '', gender: '', inspiredBy: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
     };

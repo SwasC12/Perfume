@@ -341,6 +341,32 @@ body {
 .scan-frame { position: absolute; inset: 16%; border: 3px solid rgba(255,255,255,0.85); border-radius: 14px; box-shadow: 0 0 0 100vh rgba(0,0,0,0.28); }
 .scan-error { color: var(--danger, #c0392b); font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
 .view-intro { color: var(--ink-dim); max-width: 640px; margin: 0 0 18px; font-size: 14px; }
+
+/* Budgeting / cash-up / panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; margin-bottom: 16px; }
+.panel-title { margin: 0 0 12px; font-size: 15px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.panel-head .panel-title { margin: 0; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi-row.tight { margin-bottom: 8px; }
+.kpi-row .kpi { background: var(--bg2, var(--bg)); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.kpi-row .kpi.accent { background: var(--accent-soft); border-color: transparent; }
+.kpi-label { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+.kpi-val { font-size: 20px; font-weight: 800; }
+.inv-val-row { display: flex; gap: 22px; flex-wrap: wrap; }
+.inv-val-row > div { display: flex; flex-direction: column; gap: 2px; }
+.inv-val-row strong { font-size: 18px; }
+.month-input, .panel-head input[type="date"] { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; color: var(--ink); background: var(--surface); }
+.cat-breakdown, .cashup-methods { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.cat-chip { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; }
+.expense-form { display: grid; grid-template-columns: auto 1fr 2fr 1fr auto; gap: 10px; align-items: center; }
+.expense-form input, .expense-form select { border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font: inherit; color: var(--ink); background: var(--surface); }
+@media (max-width: 720px) { .expense-form { grid-template-columns: 1fr 1fr; } }
+.cashup { margin-top: 18px; }
+.offline-banner { display: flex; align-items: center; gap: 10px; background: #fff5e6; border: 1px solid #f0c987; color: #8a5a00; border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; margin-bottom: 14px; }
+.batch-bar { display: flex; align-items: center; gap: 12px; background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-weight: 600; }
+.order-head-left { display: flex; align-items: center; gap: 10px; }
+.print-check input { width: 18px; height: 18px; }
 .image-manager { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
 .image-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
 .image-card h3 { margin: 0 0 12px; font-size: 15px; }

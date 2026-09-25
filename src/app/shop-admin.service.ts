@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc, increment } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest, Expense } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -23,6 +23,7 @@ export class ShopAdminService {
   readonly customers = signal<CustomerProfile[]>([]);
   readonly discounts = signal<Discount[]>([]);
   readonly restockRequests = signal<RestockRequest[]>([]);
+  readonly expenses = signal<Expense[]>([]);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -38,6 +39,7 @@ export class ShopAdminService {
   private unsubCustomers?: Unsubscribe;
   private unsubDiscounts?: Unsubscribe;
   private unsubRestock?: Unsubscribe;
+  private unsubExpenses?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
@@ -66,6 +68,16 @@ export class ShopAdminService {
       collection(db, 'restockRequests'),
       (snap) => this.restockRequests.set(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RestockRequest, 'id'>) }))),
       () => this.restockRequests.set([]),
+    );
+
+    this.unsubExpenses = onSnapshot(
+      collection(db, 'expenses'),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Expense, 'id'>) }));
+        list.sort((a, b) => (b.date || 0) - (a.date || 0));
+        this.expenses.set(list);
+      },
+      () => this.expenses.set([]),
     );
 
     this.unsubContent = onSnapshot(
@@ -103,6 +115,7 @@ export class ShopAdminService {
     this.unsubCustomers?.();
     this.unsubDiscounts?.();
     this.unsubRestock?.();
+    this.unsubExpenses?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
@@ -117,6 +130,16 @@ export class ShopAdminService {
     this.customers.set([]);
     this.discounts.set([]);
     this.restockRequests.set([]);
+    this.expenses.set([]);
+    this.unsubExpenses = undefined;
+  }
+
+  // ---- Expenses (budgeting) ----
+  async addExpense(e: Omit<Expense, 'id' | 'createdAt'>): Promise<void> {
+    await addDoc(collection(getDb(), 'expenses'), { ...e, createdAt: Date.now() });
+  }
+  async deleteExpense(id: string): Promise<void> {
+    await deleteDoc(doc(getDb(), 'expenses', id));
   }
 
   async markRestockNotified(id: string): Promise<void> {
