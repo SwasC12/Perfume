@@ -335,6 +335,16 @@ body {
   animation: pop 0.16s ease;
 }
 .modal.small { max-width: 360px; }
+.view-intro { color: var(--ink-dim); max-width: 640px; margin: 0 0 18px; font-size: 14px; }
+.image-manager { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+.image-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.image-card h3 { margin: 0 0 12px; font-size: 15px; }
+.image-preview { background: #fff; border: 1px solid var(--line); border-radius: 12px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
+.image-preview img { width: 100%; height: 100%; object-fit: contain; }
+.image-status { font-size: 12px; font-weight: 600; color: var(--ink-dim); margin: 10px 0; }
+.image-status.custom { color: var(--ok); }
+.image-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.image-actions .btn { cursor: pointer; }
 .discount-preview { background: var(--accent-soft); color: var(--accent-dark); border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 600; margin: 4px 0 12px; }
 .discount-preview span { color: var(--ink-dim); font-weight: 700; margin-right: 4px; }
 .modal.wide { max-width: 760px; padding: 26px 28px; }

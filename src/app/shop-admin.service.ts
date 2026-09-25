@@ -157,6 +157,11 @@ export class ShopAdminService {
     await setDoc(doc(getDb(), 'settings', 'store'), { ...data, updatedAt: Date.now() });
   }
 
+  /** Merge a few fields into store settings without clobbering the rest (e.g. placeholder images). */
+  async updateStoreSettings(partial: Partial<StoreSettings>): Promise<void> {
+    await setDoc(doc(getDb(), 'settings', 'store'), { ...partial, updatedAt: Date.now() }, { merge: true });
+  }
+
   /** Reduce stock for the ordered items (products that track quantity). */
   async decrementStockForOrder(items: OrderItem[]): Promise<void> {
     const prods = this.products();

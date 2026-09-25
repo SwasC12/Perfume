@@ -32,6 +32,9 @@
         <button class="nav-item" [class.active]="tab() === 'content'" (click)="go('content')">
           <app-icon name="store" [size]="18" /> Storefront
         </button>
+        <button class="nav-item" [class.active]="tab() === 'images'" (click)="go('images')">
+          <app-icon name="image" [size]="18" /> Image Manager
+        </button>
         <button class="nav-item" [class.active]="tab() === 'settings'" (click)="go('settings')">
           <app-icon name="settings" [size]="18" /> Settings
         </button>
@@ -283,6 +286,7 @@
               <app-icon name="package" [size]="16" /> {{ cleaningImages() ? 'Clearing…' : 'Use placeholders (' + rumiImageCount() + ')' }}
             </button>
           }
+          <button class="btn" (click)="askSetAllPrices()"><app-icon name="tag" [size]="16" /> Set all to R200</button>
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
         </div>
 
@@ -552,6 +556,39 @@
             </div>
           </div>
         }
+      }
+    </section>
+  }
+
+  <!-- ============ IMAGE MANAGER (admin) ============ -->
+  @if (tab() === 'images') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <p class="view-intro">These bottle images stand in for any product without its own photo. Upload your own to replace the defaults — men/unisex and women can differ. Changes apply across the shop once saved.</p>
+        <div class="image-manager">
+          @for (slot of imageSlots; track slot.key) {
+            <div class="image-card">
+              <h3>{{ slot.label }}</h3>
+              <div class="image-preview"><img [src]="placeholderPreview(slot.key)" [alt]="slot.label" (error)="onImgError($event)" /></div>
+              <p class="image-status" [class.custom]="hasCustomPlaceholder(slot.key)">{{ hasCustomPlaceholder(slot.key) ? 'Custom image' : 'Using default placeholder' }}</p>
+              <div class="image-actions">
+                <label class="btn"><app-icon name="image" [size]="16" /> {{ hasCustomPlaceholder(slot.key) ? 'Replace' : 'Upload' }}
+                  <input type="file" accept="image/*" hidden (change)="onPlaceholderFile(slot.key, $event)" />
+                </label>
+                @if (hasCustomPlaceholder(slot.key)) { <button class="btn" (click)="resetPlaceholder(slot.key)">Reset to default</button> }
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-actions" style="margin-top:18px">
+          <button class="btn primary" (click)="saveImages()" [disabled]="imagesSaving()">{{ imagesSaving() ? 'Saving…' : 'Save images' }}</button>
+        </div>
       }
     </section>
   }

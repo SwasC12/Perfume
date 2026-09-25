@@ -13,10 +13,10 @@ import { compressImage } from './image-util';
 import QRCode from 'qrcode';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
-import { productImage, isCustomImage } from './product-image';
+import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images';
 
 interface PosLine { product: Product; qty: number; }
 interface DiscountForm {
@@ -119,6 +119,67 @@ export class AppComponent {
   private settingsLoaded = false;
   settingsSaving = signal(false);
 
+  // ---- Image Manager (male/female placeholders) ----
+  readonly imageSlots = [
+    { key: 'men' as const, label: 'Men / Unisex placeholder' },
+    { key: 'women' as const, label: 'Women placeholder' },
+  ];
+  imageForm: { men: string; women: string } = { men: '', women: '' };
+  private imagesLoaded = false;
+  imagesSaving = signal(false);
+  /** Current preview for a slot: the pending upload, else the live placeholder (default or custom). */
+  placeholderPreview(which: 'men' | 'women'): string {
+    const pending = which === 'men' ? this.imageForm.men : this.imageForm.women;
+    return pending || placeholderFor(which === 'men' ? 'Men' : 'Women');
+  }
+  hasCustomPlaceholder(which: 'men' | 'women'): boolean {
+    const v = which === 'men' ? this.imageForm.men : this.imageForm.women;
+    return this.isDataUrl(v);
+  }
+  async onPlaceholderFile(which: 'men' | 'women', ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file, 900, 0.85);
+      if (which === 'men') this.imageForm.men = dataUrl; else this.imageForm.women = dataUrl;
+    } catch { this.showToast('Could not read that image'); }
+    input.value = '';
+  }
+  resetPlaceholder(which: 'men' | 'women'): void {
+    if (which === 'men') this.imageForm.men = ''; else this.imageForm.women = '';
+  }
+  async saveImages(): Promise<void> {
+    this.imagesSaving.set(true);
+    try {
+      await this.shopSvc.updateStoreSettings({
+        placeholderMen: this.imageForm.men || '',
+        placeholderWomen: this.imageForm.women || '',
+      });
+      this.showToast('Placeholder images saved');
+    } catch { this.showToast('Save failed — are you signed in?'); }
+    finally { this.imagesSaving.set(false); }
+  }
+
+  // ---- Bulk: set every product price ----
+  askSetAllPrices(): void {
+    const n = this.shopSvc.products().length;
+    if (!n) { this.showToast('No products yet'); return; }
+    this.confirm.set({
+      title: 'Set all prices?',
+      message: `Set the price of all ${n} products to R200? You can still edit individual prices afterwards.`,
+      confirmLabel: 'Set to R200',
+      danger: false,
+      action: async () => {
+        let done = 0;
+        for (const p of this.shopSvc.products()) {
+          try { await this.shopSvc.updateProduct(p.id, { price: 200 }); done++; } catch { /* skip */ }
+        }
+        this.showToast(`Updated ${done} price${done === 1 ? '' : 's'}`);
+      },
+    });
+  }
+
   // ---- Order detail ----
   selectedOrder = signal<Order | null>(null);
   qrDataUrl = signal<string | null>(null);
@@ -174,6 +235,15 @@ export class AppComponent {
       if (s && !this.settingsLoaded) {
         this.settingsForm = { ...this.defaultSettings(), ...JSON.parse(JSON.stringify(s)) };
         this.settingsLoaded = true;
+      }
+    });
+    // Keep placeholder overrides + the Image Manager form in sync with live settings.
+    effect(() => {
+      const s = this.shopSvc.settings();
+      setPlaceholderOverrides(s?.placeholderMen, s?.placeholderWomen);
+      if (s && !this.imagesLoaded) {
+        this.imageForm = { men: s.placeholderMen || '', women: s.placeholderWomen || '' };
+        this.imagesLoaded = true;
       }
     });
   }
@@ -322,6 +392,7 @@ export class AppComponent {
       case 'pos': return 'Point of Sale';
       case 'customers': return 'Customers';
       case 'discounts': return 'Discounts';
+      case 'images': return 'Image Manager';
       default: return '';
     }
   }

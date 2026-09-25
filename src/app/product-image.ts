@@ -5,12 +5,21 @@ export function isCustomImage(url?: string): boolean {
   return !!url && !url.includes('rumifragrances.co.za');
 }
 
+// Optional custom placeholders (data URLs) from the Image Manager, kept in sync
+// with the live store settings so admin previews match the shop.
+let customMen = '';
+let customWomen = '';
+export function setPlaceholderOverrides(men?: string, women?: string): void {
+  customMen = men || '';
+  customWomen = women || '';
+}
+
 /** Branded placeholder bottle by gender when a product has no image of its own. */
 export function placeholderFor(gender?: string): string {
   const g = (gender || '').toLowerCase();
-  return g.startsWith('w') || g.includes('lad') || g.includes('her')
-    ? 'placeholder-women.jpg'
-    : 'placeholder-men.jpg';
+  const isWomen = g.startsWith('w') || g.includes('lad') || g.includes('her');
+  if (isWomen) return customWomen || 'placeholder-women.jpg';
+  return customMen || 'placeholder-men.jpg';
 }
 
 /** The image to show for a product: its own, else the branded gender placeholder. */
