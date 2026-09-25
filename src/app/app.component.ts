@@ -15,9 +15,9 @@ import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews';
 
 interface PosLine { product: Product; qty: number; }
 interface PosSale {
@@ -596,6 +596,42 @@ export class AppComponent {
     </div>`;
   }
 
+  // ==================== Review moderation ====================
+  readonly pendingReviews = computed(() => this.shopSvc.reviews().filter((r) => !r.approved));
+  readonly approvedReviews = computed(() => this.shopSvc.reviews().filter((r) => r.approved));
+  reviewProductName(id: string): string {
+    return this.shopSvc.products().find((p) => p.id === id)?.name ?? 'Unknown product';
+  }
+  reviewStars(n: number): number[] { return [1, 2, 3, 4, 5].map((s) => (s <= n ? 1 : 0)); }
+  async approveReview(r: Review): Promise<void> {
+    try { await this.shopSvc.approveReview(r); this.showToast('Review approved'); }
+    catch { this.showToast('Approve failed — signed in?'); }
+  }
+  askDeleteReview(r: Review): void {
+    this.confirm.set({
+      message: `Delete this review by ${r.name}?`,
+      action: async () => { try { await this.shopSvc.deleteReview(r); this.showToast('Review deleted'); } catch { this.showToast('Delete failed'); } },
+    });
+  }
+
+  // ==================== Bulk cost ====================
+  readonly bulkCostOpen = signal(false);
+  bulkCostValue: number | null = null;
+  bulkCostOnlyMissing = true;
+  openBulkCost(): void { this.bulkCostValue = null; this.bulkCostOnlyMissing = true; this.bulkCostOpen.set(true); }
+  async applyBulkCost(): Promise<void> {
+    const cost = this.numOrNull(this.bulkCostValue);
+    if (cost == null || cost < 0) { this.showToast('Enter a cost'); return; }
+    const targets = this.shopSvc.products().filter((p) => (this.bulkCostOnlyMissing ? p.cost == null : true));
+    if (!targets.length) { this.showToast('Nothing to update'); this.bulkCostOpen.set(false); return; }
+    let done = 0;
+    for (const p of targets) {
+      try { await this.shopSvc.updateProduct(p.id, { cost }); done++; } catch { /* skip */ }
+    }
+    this.showToast(`Set cost on ${done} product${done === 1 ? '' : 's'}`);
+    this.bulkCostOpen.set(false);
+  }
+
   tabTitle(): string {
     switch (this.tab()) {
       case 'dashboard': return 'Dashboard';
@@ -611,6 +647,7 @@ export class AppComponent {
       case 'customers': return 'Customers';
       case 'discounts': return 'Discounts';
       case 'images': return 'Image Manager';
+      case 'reviews': return 'Reviews';
       default: return '';
     }
   }

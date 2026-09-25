@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc, increment } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest, Expense } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest, Expense, Review } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -24,6 +24,7 @@ export class ShopAdminService {
   readonly discounts = signal<Discount[]>([]);
   readonly restockRequests = signal<RestockRequest[]>([]);
   readonly expenses = signal<Expense[]>([]);
+  readonly reviews = signal<Review[]>([]);
   readonly loadingProducts = signal(false);
   readonly loadingOrders = signal(false);
   readonly error = signal<string | null>(null);
@@ -40,6 +41,7 @@ export class ShopAdminService {
   private unsubDiscounts?: Unsubscribe;
   private unsubRestock?: Unsubscribe;
   private unsubExpenses?: Unsubscribe;
+  private unsubReviews?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
@@ -80,6 +82,16 @@ export class ShopAdminService {
       () => this.expenses.set([]),
     );
 
+    this.unsubReviews = onSnapshot(
+      collection(db, 'reviews'),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Review, 'id'>) }));
+        list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        this.reviews.set(list);
+      },
+      () => this.reviews.set([]),
+    );
+
     this.unsubContent = onSnapshot(
       doc(db, 'siteContent', 'home'),
       (snap) => this.siteContent.set(snap.exists() ? (snap.data() as SiteContent) : {}),
@@ -116,6 +128,7 @@ export class ShopAdminService {
     this.unsubDiscounts?.();
     this.unsubRestock?.();
     this.unsubExpenses?.();
+    this.unsubReviews?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
@@ -131,7 +144,31 @@ export class ShopAdminService {
     this.discounts.set([]);
     this.restockRequests.set([]);
     this.expenses.set([]);
+    this.reviews.set([]);
     this.unsubExpenses = undefined;
+    this.unsubReviews = undefined;
+  }
+
+  // ---- Reviews (moderation) ----
+  async approveReview(r: Review): Promise<void> {
+    await updateDoc(doc(getDb(), 'reviews', r.id), { approved: true });
+    // Add this review to the product's cached rating aggregate.
+    try {
+      await updateDoc(doc(getDb(), 'products', r.productId), {
+        ratingSum: increment(r.rating), ratingCount: increment(1),
+      });
+    } catch { /* aggregate best-effort */ }
+  }
+  async deleteReview(r: Review): Promise<void> {
+    // If it was already counted, roll the aggregate back.
+    if (r.approved) {
+      try {
+        await updateDoc(doc(getDb(), 'products', r.productId), {
+          ratingSum: increment(-r.rating), ratingCount: increment(-1),
+        });
+      } catch { /* best-effort */ }
+    }
+    await deleteDoc(doc(getDb(), 'reviews', r.id));
   }
 
   // ---- Expenses (budgeting) ----

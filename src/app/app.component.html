@@ -29,6 +29,10 @@
         <button class="nav-item" [class.active]="tab() === 'discounts'" (click)="go('discounts')">
           <app-icon name="tag" [size]="18" /> Discounts <span class="count">{{ shopSvc.discounts().length }}</span>
         </button>
+        <button class="nav-item" [class.active]="tab() === 'reviews'" (click)="go('reviews')">
+          <app-icon name="star" [size]="18" /> Reviews
+          @if (pendingReviews().length > 0) { <span class="count alert">{{ pendingReviews().length }}</span> }
+        </button>
         <button class="nav-item" [class.active]="tab() === 'budget'" (click)="go('budget')">
           <app-icon name="chart" [size]="18" /> Budgeting
         </button>
@@ -296,6 +300,7 @@
             </button>
           }
           <button class="btn" (click)="askSetAllPrices()"><app-icon name="tag" [size]="16" /> Set all to R200</button>
+          <button class="btn" (click)="openBulkCost()"><app-icon name="chart" [size]="16" /> Set costs</button>
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
         </div>
 
@@ -621,6 +626,62 @@
         <div class="modal-actions" style="margin-top:18px">
           <button class="btn primary" (click)="saveImages()" [disabled]="imagesSaving()">{{ imagesSaving() ? 'Saving…' : 'Save images' }}</button>
         </div>
+      }
+    </section>
+  }
+
+  <!-- ============ REVIEWS (admin) ============ -->
+  @if (tab() === 'reviews') {
+    <section class="view">
+      @if (!authSvc.isAdmin) {
+        <div class="empty gate">
+          <app-icon name="lock" [size]="40" />
+          <h3>Admin sign-in required</h3>
+          <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
+        </div>
+      } @else {
+        <p class="view-intro">Reviews from shoppers appear here first. Approve the ones you want shown on the shop — approved reviews count toward the product's star rating.</p>
+
+        <h3 class="panel-title">Pending @if (pendingReviews().length) { <span class="dim">({{ pendingReviews().length }})</span> }</h3>
+        @if (pendingReviews().length === 0) {
+          <p class="editor-hint">No reviews waiting.</p>
+        } @else {
+          @for (r of pendingReviews(); track r.id) {
+            <div class="review-mod">
+              <div class="review-mod-main">
+                <div class="review-mod-head">
+                  <span class="stars">@for (f of reviewStars(r.rating); track $index) { <app-icon name="star" [size]="14" [filled]="f === 1" /> }</span>
+                  <strong>{{ r.name }}</strong>
+                  <span class="dim">· {{ reviewProductName(r.productId) }} · {{ orderDate(r.createdAt) }}</span>
+                </div>
+                @if (r.text) { <p class="review-mod-text">{{ r.text }}</p> }
+              </div>
+              <div class="review-mod-actions">
+                <button class="mini-btn ok" (click)="approveReview(r)">Approve</button>
+                <button class="icon" (click)="askDeleteReview(r)"><app-icon name="trash" [size]="16" /></button>
+              </div>
+            </div>
+          }
+        }
+
+        @if (approvedReviews().length) {
+          <h3 class="panel-title" style="margin-top:22px">Approved</h3>
+          @for (r of approvedReviews(); track r.id) {
+            <div class="review-mod">
+              <div class="review-mod-main">
+                <div class="review-mod-head">
+                  <span class="stars">@for (f of reviewStars(r.rating); track $index) { <app-icon name="star" [size]="14" [filled]="f === 1" /> }</span>
+                  <strong>{{ r.name }}</strong>
+                  <span class="dim">· {{ reviewProductName(r.productId) }}</span>
+                </div>
+                @if (r.text) { <p class="review-mod-text">{{ r.text }}</p> }
+              </div>
+              <div class="review-mod-actions">
+                <button class="icon" (click)="askDeleteReview(r)"><app-icon name="trash" [size]="16" /></button>
+              </div>
+            </div>
+          }
+        }
       }
     </section>
   }
@@ -1422,6 +1483,24 @@
         <div class="modal-actions">
           <button class="btn" (click)="closeScanner()">Close</button>
           <button class="btn primary" (click)="submitManualScan()">Find order</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ============ BULK COST ============ -->
+  @if (bulkCostOpen()) {
+    <div class="overlay" (click)="bulkCostOpen.set(false)">
+      <div class="modal small" (click)="$event.stopPropagation()">
+        <h2>Set cost per unit</h2>
+        <p class="confirm-msg">Enter what each unit costs you (oil + bottle + packaging). Used for profit and inventory value.</p>
+        <label>Cost (R)
+          <input type="number" min="0" step="0.01" [(ngModel)]="bulkCostValue" name="bulkCost" autofocus />
+        </label>
+        <label class="chk inline2"><input type="checkbox" [(ngModel)]="bulkCostOnlyMissing" name="bulkOnlyMissing" /> Only products without a cost yet</label>
+        <div class="modal-actions">
+          <button class="btn" (click)="bulkCostOpen.set(false)">Cancel</button>
+          <button class="btn primary" (click)="applyBulkCost()">Apply</button>
         </div>
       </div>
     </div>

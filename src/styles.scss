@@ -367,6 +367,11 @@ body {
 .batch-bar { display: flex; align-items: center; gap: 12px; background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-weight: 600; }
 .order-head-left { display: flex; align-items: center; gap: 10px; }
 .print-check input { width: 18px; height: 18px; }
+.stars { display: inline-flex; align-items: center; gap: 1px; color: #e0a92e; }
+.review-mod { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.review-mod-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.review-mod-text { margin: 6px 0 0; font-size: 14px; color: var(--ink); line-height: 1.5; }
+.review-mod-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .image-manager { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
 .image-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
 .image-card h3 { margin: 0 0 12px; font-size: 15px; }

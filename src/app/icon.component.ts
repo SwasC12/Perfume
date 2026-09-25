@@ -99,6 +99,7 @@ import { Component, Input } from '@angular/core';
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         }
+        @case ('star') { <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> }
         @case ('chart') {
           <line x1="4" y1="20" x2="20" y2="20" />
           <rect x="6" y="11" width="3" height="6" rx="0.5" />

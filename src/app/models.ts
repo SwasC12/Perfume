@@ -62,6 +62,16 @@ export interface Product {
   updatedAt: number;
 }
 
+export interface Review {
+  id: string;
+  productId: string;
+  name: string;
+  rating: number; // 1–5
+  text?: string;
+  approved?: boolean;
+  createdAt: number;
+}
+
 // Business expense / spend line for the Budgeting tab.
 export interface Expense {
   id: string;

@@ -16,28 +16,23 @@ service cloud.firestore {
       allow list: if false;
     }
 
-    // Shop catalogue — anyone can read; only the admin can change it.
-    // Exception: a shopper posting a review may bump the cached rating aggregate
-    // (ratingSum/ratingCount) by one review's worth — nothing else.
+    // Shop catalogue — anyone can read; only the admin can change it
+    // (the rating aggregate is updated by the admin when approving a review).
     match /products/{id} {
       allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum', 'ratingCount'])
-        && request.resource.data.ratingCount == resource.data.get('ratingCount', 0) + 1
-        && request.resource.data.ratingSum >= resource.data.get('ratingSum', 0) + 1
-        && request.resource.data.ratingSum <= resource.data.get('ratingSum', 0) + 5
-      );
+      allow write: if isAdmin();
     }
 
-    // Product reviews — anyone can read and post a valid review; admin moderates.
+    // Product reviews — anyone can post one, but it arrives unapproved and stays
+    // hidden until the admin approves it. Only the admin reads the full set / moderates.
     match /reviews/{id} {
       allow read: if true;
       allow create: if request.resource.data.rating is int
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
         && request.resource.data.productId is string
         && request.resource.data.name is string
-        && request.resource.data.name.size() <= 60;
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.approved == false;
       allow update, delete: if isAdmin();
     }
 
