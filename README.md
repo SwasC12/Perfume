@@ -37,9 +37,10 @@ login. Do this once:
 1. **Enable admin login:** Firebase console → **Authentication** → Sign-in method →
    enable **Email/Password**. Then **Users → Add user** (your email + a password)
    and copy the **User UID**.
-2. **Publish the rules:** open [`firestore.rules`](./firestore.rules), replace
-   `PASTE_ADMIN_UID` with that UID, and paste the whole file into console →
-   **Firestore Database → Rules → Publish**.
+2. **Publish the rules:** open [`firestore.rules`](./firestore.rules) and paste
+   the whole file into console → **Firestore Database → Rules → Publish**.
+   The admin UID is already filled in; change it there if the admin user changes.
+   Keep the `workspaces` and `expenses` rules — they power sync and Budgeting.
 3. **Authorize the admin domain:** Authentication → Settings → Authorized domains →
    add your deployed admin URL (e.g. `perfume-xxxx.vercel.app`). `localhost` is
    already allowed for local dev.

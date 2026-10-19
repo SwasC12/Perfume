@@ -3,9 +3,8 @@ rules_version = '2';
 // Firestore security rules for the shared Kauā Fragrances project (perfume-3b075).
 // Used by BOTH the Oil Tracker admin app and the kf-publicsite storefront.
 //
-// SETUP: the admin UID is already filled in below. To change it, replace the UID
-// in isAdmin(), then paste this whole file into
-// console -> Firestore Database -> Rules -> Publish.
+// SETUP: replace the UID in isAdmin() if the admin user changes, then paste this
+// whole file into console -> Firestore Database -> Rules -> Publish.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -16,23 +15,25 @@ service cloud.firestore {
       allow list: if false;
     }
 
-    // Shop catalogue — anyone can read; only the admin can change it
-    // (the rating aggregate is updated by the admin when approving a review).
+    // Shop catalogue — shoppers only see active products; admin manages all.
     match /products/{id} {
-      allow read: if true;
+      allow read: if resource.data.active == true || isAdmin();
       allow write: if isAdmin();
     }
 
-    // Product reviews — anyone can post one, but it arrives unapproved and stays
-    // hidden until the admin approves it. Only the admin reads the full set / moderates.
+    // Product reviews — anyone may post one, but it arrives unapproved and stays
+    // hidden until the admin approves it. The public shop queries approved == true.
     match /reviews/{id} {
-      allow read: if true;
+      allow read: if resource.data.approved == true || isAdmin();
       allow create: if request.resource.data.rating is int
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
         && request.resource.data.productId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 60
-        && request.resource.data.approved == false;
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 600
+        && request.resource.data.approved == false
+        && request.resource.data.keys().hasOnly(['productId', 'name', 'rating', 'text', 'approved', 'createdAt']);
       allow update, delete: if isAdmin();
     }
 
@@ -49,56 +50,38 @@ service cloud.firestore {
     }
 
     // Public order-status lookup (by reference) for the Track page.
-    // Created when an order is placed; only the admin changes it afterwards.
-    // get = look up one known reference (public); list = enumerate all (admin only).
+    // Written by the shop Worker (Admin SDK) and by the admin app.
     match /orderStatus/{ref} {
       allow get: if true;
       allow list: if isAdmin();
-      allow create: if request.resource.data.status == 'pending';
-      allow update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    // Customer profiles — each customer manages their own; the admin can view all.
+    // Customer profiles — each customer manages their own; the admin can view/modify all.
     match /customers/{uid} {
       allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if isAdmin() || (request.auth != null && request.auth.uid == uid);
     }
 
-    // Discount / promo codes — a shopper can validate a code they already know
-    // (get), but nobody can enumerate every code (list = admin only). Admin writes.
-    // Anyone may increment usedCount by exactly 1 (redemption tracking); nothing else.
+    // Promo codes are checked by the shop Worker (Admin SDK). No browser reads.
     match /discounts/{code} {
-      allow get: if true;
-      allow list: if isAdmin();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount'])
-        && request.resource.data.usedCount == resource.data.usedCount + 1
-      );
+      allow read, write: if isAdmin();
     }
 
     // "Notify me when back in stock" requests — anyone can create; only admin reads/manages.
     match /restockRequests/{id} {
       allow create: if request.resource.data.notified == false
         && request.resource.data.email is string
-        && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
         && request.resource.data.email.size() < 200
         && request.resource.data.productId is string;
       allow read, update, delete: if isAdmin();
     }
 
-    // Orders:
-    //  - a customer (or guest) may place one for themselves;
-    //  - a signed-in customer may read their own orders;
-    //  - only the admin can read all / update / delete.
+    // Orders — written by the shop Worker (Admin SDK) or the admin POS screen.
+    // A signed-in customer may read only their own order history.
     match /orders/{id} {
-      allow create: if isAdmin() || (isValidNewOrder() && (
-        request.resource.data.uid == null ||
-        (request.auth != null && request.resource.data.uid == request.auth.uid)
-      ));
-      allow read: if isAdmin() ||
-        (request.auth != null && resource.data.uid == request.auth.uid);
-      allow update, delete: if isAdmin();
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
     }
 
     // Business expenses (Budgeting tab) — admin only, never public.
@@ -108,15 +91,6 @@ service cloud.firestore {
 
     function isAdmin() {
       return request.auth != null && request.auth.uid == 'iQjj1HHAUAM6BzWGcoYWepQCpRx2';
-    }
-
-    function isValidNewOrder() {
-      let d = request.resource.data;
-      return d.status == 'pending'
-        && d.reference is string
-        && d.total is number
-        && d.total >= 0
-        && d.items is list;
     }
   }
 }
