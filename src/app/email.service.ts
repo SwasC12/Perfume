@@ -49,6 +49,8 @@ export class EmailService {
           reference: order.reference,
           status,
           total: order.total,
+          courier: order.courier || '',
+          trackingNumber: order.trackingNumber || '',
         }),
       });
     } catch {

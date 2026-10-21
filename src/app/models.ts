@@ -171,7 +171,14 @@ export interface Order {
   status: OrderStatus;
   stage?: FulfilStage;
   channel?: 'online' | 'pos';
-  paymentMethod?: string; // cash | card | eft
+  paymentMethod?: string; // cash | card | eft | yoco
+  courier?: string;
+  trackingNumber?: string;
+  stockReserved?: boolean;
+  stockRestored?: boolean;
+  discountCounted?: boolean;
+  paidAt?: number;
+  cancelledReason?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -192,6 +199,10 @@ export interface StoreSettings {
   bankAccountNumber?: string;
   bankBranchCode?: string;
   bankAccountType?: string;
+  companyName?: string;
+  companyRegistration?: string;
+  companyAddress?: string;
+  vatNumber?: string;
   // Custom placeholder images (data URLs) set from the Image Manager tab.
   placeholderMen?: string;
   placeholderWomen?: string;

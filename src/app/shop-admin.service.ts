@@ -238,6 +238,68 @@ export class ShopAdminService {
     }
   }
 
+  /** Put stock back when an online order is cancelled or expires. */
+  async restoreStockForOrder(order: Order): Promise<void> {
+    if (!order.stockReserved || order.stockRestored) return;
+    for (const it of order.items || []) {
+      try {
+        const snap = await getDoc(doc(getDb(), 'products', it.productId));
+        if (!snap.exists()) continue;
+        const p = snap.data() as Product;
+        if (p.stockQty == null) continue;
+        await updateDoc(doc(getDb(), 'products', it.productId), {
+          stockQty: increment(it.qty),
+          inStock: true,
+          updatedAt: Date.now(),
+        });
+      } catch { /* keep restoring the rest */ }
+    }
+    await updateDoc(doc(getDb(), 'orders', order.id), {
+      stockRestored: true,
+      updatedAt: Date.now(),
+    });
+  }
+
+  /** Count a promo redemption once, when the order is actually paid. */
+  async countDiscount(order: Order): Promise<void> {
+    if (!order.discountCode || !(order.discountAmount || 0) || order.discountCounted) return;
+    try {
+      await updateDoc(doc(getDb(), 'discounts', order.discountCode.trim().toUpperCase()), {
+        usedCount: increment(1),
+      });
+      await updateDoc(doc(getDb(), 'orders', order.id), {
+        discountCounted: true,
+        updatedAt: Date.now(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  /** Release a promo redemption if a paid order is later cancelled. */
+  async releaseDiscount(order: Order): Promise<void> {
+    if (!order.discountCode || !order.discountCounted) return;
+    try {
+      await updateDoc(doc(getDb(), 'discounts', order.discountCode.trim().toUpperCase()), {
+        usedCount: increment(-1),
+      });
+      await updateDoc(doc(getDb(), 'orders', order.id), {
+        discountCounted: false,
+        updatedAt: Date.now(),
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  async setOrderTracking(order: Order, courier: string, trackingNumber: string): Promise<void> {
+    const c = courier.trim().slice(0, 80) || null;
+    const t = trackingNumber.trim().slice(0, 80) || null;
+    const now = Date.now();
+    await updateDoc(doc(getDb(), 'orders', order.id), { courier: c, trackingNumber: t, updatedAt: now });
+    try {
+      await setDoc(doc(getDb(), 'orderStatus', order.reference), {
+        reference: order.reference, courier: c, trackingNumber: t, updatedAt: now,
+      }, { merge: true });
+    } catch { /* non-fatal */ }
+  }
+
   // ---- POS (in-person sale) ----
   async createPosOrder(data: {
     items: OrderItem[]; subtotal: number; total: number;
@@ -256,6 +318,8 @@ export class ShopAdminService {
       discountAmount: data.discountAmount || undefined,
       stage: 'shipped', items: data.items, total: data.total,
       status: data.status, createdAt: now, updatedAt: now,
+      stockReserved: true,
+      discountCounted: !!(data.discountAmount && data.discountCode),
     });
     try {
       await setDoc(doc(getDb(), 'orderStatus', reference),
@@ -281,7 +345,10 @@ export class ShopAdminService {
   // ---- Orders ----
   async setOrderStatus(order: Order, status: OrderStatus): Promise<void> {
     const now = Date.now();
-    await updateDoc(doc(getDb(), 'orders', order.id), { status, updatedAt: now });
+    const patch: Record<string, any> = { status, updatedAt: now };
+    if (status === 'paid') patch['paidAt'] = now;
+    if (status === 'cancelled') patch['cancelledReason'] = 'admin';
+    await updateDoc(doc(getDb(), 'orders', order.id), patch);
     // Keep the public tracking doc in sync.
     try {
       await setDoc(doc(getDb(), 'orderStatus', order.reference),

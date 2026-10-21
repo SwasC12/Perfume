@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getAuthInstance, isFirebaseConfigured } from './firebase';
 
 @Injectable({ providedIn: 'root' })
@@ -38,6 +38,21 @@ export class AuthService {
           ? 'Wrong email or password.'
           : 'Sign-in failed. Check your connection and try again.',
       );
+      return false;
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async resetPassword(email: string): Promise<boolean> {
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      await sendPasswordResetEmail(getAuthInstance(), email.trim());
+      return true;
+    } catch (e: any) {
+      const c = e?.code ?? '';
+      this.error.set(c.includes('invalid-email') ? 'That email address looks invalid.' : 'Could not send the reset email.');
       return false;
     } finally {
       this.busy.set(false);

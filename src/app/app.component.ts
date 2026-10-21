@@ -105,11 +105,15 @@ export class AppComponent {
   readonly rumiSort = signal<'name' | 'price-asc' | 'price-desc' | 'stock'>('name');
   readonly productSearch = signal('');
   readonly orderFilter = signal<'all' | OrderStatus>('all');
+  readonly orderSearch = signal('');
+  readonly trackingCourier = signal('');
+  readonly trackingNumber = signal('');
 
   // ---- Admin auth ----
   adminLoginOpen = signal(false);
   loginEmail = '';
   loginPassword = '';
+  readonly adminResetSent = signal(false);
   showLoginPw = signal(false);
 
   // ---- Product modal ----
@@ -775,8 +779,16 @@ export class AppComponent {
 
   readonly filteredOrders = computed<Order[]>(() => {
     const f = this.orderFilter();
-    const list = this.shopSvc.orders();
-    return f === 'all' ? list : list.filter((o) => o.status === f);
+    const q = this.orderSearch().trim().toLowerCase();
+    let list = f === 'all' ? this.shopSvc.orders() : this.shopSvc.orders().filter((o) => o.status === f);
+    if (q) {
+      list = list.filter((o) =>
+        [o.reference, o.customer?.name, o.customer?.email, o.customer?.phone]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q)),
+      );
+    }
+    return list;
   });
 
   // ---------- Oils ----------
@@ -1003,10 +1015,20 @@ export class AppComponent {
 
   // ---------- Admin auth ----------
   openAdminLogin(): void {
+    this.adminResetSent.set(false);
     this.loginEmail = '';
     this.loginPassword = '';
     this.authSvc.error.set(null);
     this.adminLoginOpen.set(true);
+  }
+
+  async forgotAdmin(): Promise<void> {
+    if (!this.loginEmail.trim()) {
+      this.authSvc.error.set('Enter your email address first.');
+      return;
+    }
+    const ok = await this.authSvc.resetPassword(this.loginEmail);
+    if (ok) this.adminResetSent.set(true);
   }
 
   async doLogin(): Promise<void> {
@@ -1368,7 +1390,15 @@ export class AppComponent {
     }
     try {
       await this.shopSvc.setOrderStatus(o, status);
-      if (status === 'paid') await this.shopSvc.decrementStockForOrder(o.items);
+      if (status === 'paid') {
+        // New orders reserve stock when placed; only legacy orders still need this.
+        if (!o.stockReserved) await this.shopSvc.decrementStockForOrder(o.items);
+        await this.shopSvc.countDiscount(o);
+      }
+      if (status === 'cancelled') {
+        await this.shopSvc.restoreStockForOrder(o);
+        await this.shopSvc.releaseDiscount(o);
+      }
       if (status === 'paid' || status === 'fulfilled') this.emailSvc.status(o, status);
       this.showToast(`Order marked ${status}`);
     } catch {
@@ -1448,12 +1478,23 @@ export class AppComponent {
   // ---------- Order detail / export ----------
   openOrderDetail(o: Order): void {
     this.selectedOrder.set(o);
+    this.trackingCourier.set(o.courier || '');
+    this.trackingNumber.set(o.trackingNumber || '');
     this.qrDataUrl.set(null);
     QRCode.toDataURL(`KF-ORDER:${o.reference}`, { margin: 1, width: 200, color: { dark: '#141210', light: '#ffffff' } })
       .then((url) => this.qrDataUrl.set(url))
       .catch(() => {});
   }
   printInvoice(): void { setTimeout(() => window.print(), 50); }
+
+  async saveTracking(o: Order): Promise<void> {
+    try {
+      await this.shopSvc.setOrderTracking(o, this.trackingCourier(), this.trackingNumber());
+      this.showToast('Tracking saved');
+    } catch {
+      this.showToast('Could not save tracking');
+    }
+  }
 
   stageIndex(o: Order): number { return FULFIL_STAGES.indexOf((o.stage || 'placed') as FulfilStage); }
   async setStage(o: Order, stage: FulfilStage): Promise<void> {

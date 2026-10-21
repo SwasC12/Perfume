@@ -363,6 +363,8 @@
           @for (f of ['all','pending','paid','fulfilled','cancelled']; track f) {
             <button class="chip" [class.active]="orderFilter() === f" (click)="orderFilter.set($any(f))">{{ f }}</button>
           }
+          <input class="search order-search" type="search" name="orderSearch" placeholder="Search reference, customer, email…"
+                 [ngModel]="orderSearch()" (ngModelChange)="orderSearch.set($event)" />
           <button class="btn export-btn" (click)="openScanner()"><app-icon name="qr" [size]="16" /> Scan order</button>
           @if (shopSvc.orders().length) {
             <button class="btn export-btn" (click)="exportOrdersCsv()">Export CSV</button>
@@ -813,6 +815,16 @@
               <label>Contact email <input type="email" [(ngModel)]="settingsForm.contactEmail" name="sEmail" placeholder="hello@kauafragrances.co.za" /></label>
               <label>Contact phone <input type="tel" [(ngModel)]="settingsForm.contactPhone" name="sPhone" /></label>
             </div>
+          </div>
+
+          <div class="editor-card">
+            <h3 class="editor-title">Business details (used on Terms &amp; Privacy)</h3>
+            <div class="row2">
+              <label>Company name <input type="text" [(ngModel)]="settingsForm.companyName" name="sCompany" placeholder="Kauā Fragrances" /></label>
+              <label>Registration no. <input type="text" [(ngModel)]="settingsForm.companyRegistration" name="sReg" placeholder="2026/000000/07" /></label>
+            </div>
+            <label>Business address <input type="text" [(ngModel)]="settingsForm.companyAddress" name="sAddr" placeholder="Street, City, Province, Postal code" /></label>
+            <label>VAT number (optional) <input type="text" [(ngModel)]="settingsForm.vatNumber" name="sVat" placeholder="4xxxxxxxxx" /></label>
           </div>
 
           <div class="editor-card">
@@ -1281,6 +1293,8 @@
                 </button>
               </span>
             </label>
+            <button type="button" class="linkbtn" (click)="forgotAdmin()" [disabled]="authSvc.busy()">Forgot password?</button>
+            @if (adminResetSent()) { <p class="form-ok">Reset link sent to your email.</p> }
             @if (authSvc.error()) { <p class="form-error">{{ authSvc.error() }}</p> }
             <div class="modal-actions">
               <button type="button" class="btn" (click)="adminLoginOpen.set(false)">Cancel</button>
@@ -1441,6 +1455,20 @@
             <div class="inv-grand"><span>Total</span><span>{{ price(o.total) }}</span></div>
           </div>
           <p class="inv-foot">Payment by EFT · reference <strong>{{ o.reference }}</strong> · Kauā Fragrances</p>
+        </div>
+
+        <div class="tracking-box no-print">
+          <div class="stage-label">Courier &amp; tracking</div>
+          <div class="tracking-row">
+            <input type="text" name="courier" placeholder="Courier (e.g. The Courier Guy)"
+                   [ngModel]="trackingCourier()" (ngModelChange)="trackingCourier.set($event)" />
+            <input type="text" name="trackno" placeholder="Tracking number"
+                   [ngModel]="trackingNumber()" (ngModelChange)="trackingNumber.set($event)" />
+            <button class="btn" (click)="saveTracking(o)">Save</button>
+          </div>
+          @if (o.courier || o.trackingNumber) {
+            <p class="editor-hint">Customer sees: {{ o.courier || 'Courier' }} · {{ o.trackingNumber || 'no tracking number yet' }}</p>
+          }
         </div>
 
         <div class="stage-steps no-print">
