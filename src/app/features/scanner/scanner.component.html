@@ -1,0 +1,83 @@
+<section class="scanner-view">
+  <div class="scanner-head">
+    <div>
+      <h1 class="page-title">Scan &amp; QR</h1>
+      <p class="view-intro">Scan order or batch QR codes, check details, and mark parcels as shipped. Generate codes for orders, batches and products.</p>
+    </div>
+    <button class="btn" (click)="scanning() ? stop() : start()">
+      {{ scanning() ? 'Stop camera' : 'Start camera' }}
+    </button>
+  </div>
+
+  <div class="scanner-grid">
+    <div class="panel scan-panel">
+      <div class="scan-frame">
+        <video #video playsinline muted></video>
+        <canvas #canvas hidden></canvas>
+        @if (!scanning()) {
+          <div class="scan-idle">
+            <span class="scan-icon">▦</span>
+            <p>Camera is off</p>
+            <button class="btn primary" (click)="start()">Start scanning</button>
+          </div>
+        }
+        <div class="scan-line"></div>
+      </div>
+      @if (error()) { <p class="form-error">{{ error() }}</p> }
+      @if (lastCode()) { <p class="scan-last">Last scan: <strong>{{ lastCode() }}</strong></p> }
+
+      @if (order(); as o) {
+        <div class="scan-result">
+          <div class="result-head"><strong>{{ o.reference }}</strong><span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span></div>
+          <p>{{ o.customer.name }} · {{ o.customer.email }}@if (o.customer.phone) { · {{ o.customer.phone }} }</p>
+          <p class="dim">{{ o.items.length }} item(s) · {{ o.total | currency:'ZAR':'symbol-narrow':'1.0-2' }}</p>
+          @if (o.status === 'paid' || o.status === 'fulfilled') {
+            <button class="btn primary" (click)="markShipped()">Mark shipped</button>
+          }
+        </div>
+      }
+      @if (product(); as p) {
+        <div class="scan-result">
+          <strong>{{ p.name }}</strong>
+          <p class="dim">{{ p.category || '' }}@if (p.gender) { · {{ p.gender }} }</p>
+        </div>
+      }
+      @if (batchCode()) {
+        <div class="scan-result"><strong>Batch {{ batchCode() }}</strong><p class="dim">Scanned batch code</p></div>
+      }
+
+      @if (scanned().length) {
+        <div class="scan-list">
+          <div class="scan-list-head"><strong>Scanned</strong><button class="mini-btn" (click)="clear()">Clear</button></div>
+          @for (row of scanned(); track row.at + row.code) {
+            <div class="scan-row"><span>{{ row.label }}</span><span class="dim">{{ row.at | date:'HH:mm:ss' }}</span></div>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="panel gen-panel">
+      <h2>QR generator</h2>
+      <p class="editor-hint">Generate a QR for an order reference, a batch, a product ID, or custom text.</p>
+      <label>Type
+        <select [(ngModel)]="genType" name="genType" class="form-select">
+          <option value="order">Order</option>
+          <option value="batch">Batch</option>
+          <option value="product">Product</option>
+          <option value="custom">Custom text</option>
+        </select>
+      </label>
+      <label>Value
+        <input type="text" [(ngModel)]="genValue" name="genValue" placeholder="KF-XXXXX / batch code / product ID" />
+      </label>
+      <button class="btn primary" (click)="generate()">Generate QR</button>
+      @if (genError()) { <p class="form-error">{{ genError() }}</p> }
+      @if (generated()) {
+        <div class="qr-preview">
+          <img [src]="generated()!" alt="Generated QR code" />
+          <a class="btn" [href]="generated()!" [download]="'kaua-qr.png'">Download</a>
+        </div>
+      }
+    </div>
+  </div>
+</section>

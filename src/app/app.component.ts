@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { ShopAdminService } from './shop-admin.service';
 import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
+import { ScannerComponent } from './features/scanner/scanner.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
 import { compressImage } from './image-util';
 import QRCode from 'qrcode';
@@ -17,7 +18,7 @@ import { discountError, computeDiscount, discountSummary, DiscountLine } from '.
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review, PRODUCT_SIZE_KEYS, PRODUCT_SIZE_LABELS, ProductSize, ProductSizeKey, fromPrice, sizeOptions, sizeEffectivePrice, sizeOnSale, sizeAvailable } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'scanner' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews';
 
 interface PosLine { product: Product; sizeKey?: ProductSizeKey; qty: number; }
 interface PosSale {
@@ -94,7 +95,7 @@ interface ProductForm {
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, ScannerComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -152,45 +153,50 @@ export class AppComponent {
   private settingsLoaded = false;
   settingsSaving = signal(false);
 
-  // ---- Image Manager (male/female placeholders) ----
+  // ---- Image Manager (per-size placeholders) ----
   readonly imageSlots = [
-    { key: 'men' as const, label: 'Men / Unisex placeholder' },
-    { key: 'women' as const, label: 'Women placeholder' },
+    { key: 'men30', label: 'Men / Unisex — 30ml', gender: 'Men', size: '30ml' },
+    { key: 'men50', label: 'Men / Unisex — 50ml', gender: 'Men', size: '50ml' },
+    { key: 'men100', label: 'Men / Unisex — 100ml', gender: 'Men', size: '100ml' },
+    { key: 'women30', label: 'Women — 30ml', gender: 'Women', size: '30ml' },
+    { key: 'women50', label: 'Women — 50ml', gender: 'Women', size: '50ml' },
+    { key: 'women100', label: 'Women — 100ml', gender: 'Women', size: '100ml' },
   ];
-  imageForm: { men: string; women: string } = { men: '', women: '' };
+  imageForm: Record<string, string> = { men30: '', men50: '', men100: '', women30: '', women50: '', women100: '' };
   private imagesLoaded = false;
   imagesSaving = signal(false);
-  /** Current preview for a slot: the pending upload, else the live placeholder (default or custom). */
-  placeholderPreview(which: 'men' | 'women'): string {
-    const pending = which === 'men' ? this.imageForm.men : this.imageForm.women;
-    return pending || placeholderFor(which === 'men' ? 'Men' : 'Women');
+  placeholderPreview(key: string): string {
+    const slot = this.imageSlots.find((s) => s.key === key);
+    return this.imageForm[key] || placeholderFor(slot?.gender, slot?.size);
   }
-  hasCustomPlaceholder(which: 'men' | 'women'): boolean {
-    const v = which === 'men' ? this.imageForm.men : this.imageForm.women;
-    return this.isDataUrl(v);
+  hasCustomPlaceholder(key: string): boolean {
+    return this.isDataUrl(this.imageForm[key]);
   }
-  async onPlaceholderFile(which: 'men' | 'women', ev: Event): Promise<void> {
+  async onPlaceholderFile(key: string, ev: Event): Promise<void> {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await compressImage(file, 900, 0.85);
-      if (which === 'men') this.imageForm.men = dataUrl; else this.imageForm.women = dataUrl;
+      this.imageForm[key] = await compressImage(file, 900, 0.85);
     } catch { this.showToast('Could not read that image'); }
     input.value = '';
   }
-  resetPlaceholder(which: 'men' | 'women'): void {
-    if (which === 'men') this.imageForm.men = ''; else this.imageForm.women = '';
-  }
+  resetPlaceholder(key: string): void { this.imageForm[key] = ''; }
   async saveImages(): Promise<void> {
     this.imagesSaving.set(true);
     try {
       await this.shopSvc.updateStoreSettings({
-        placeholderMen: this.imageForm.men || '',
-        placeholderWomen: this.imageForm.women || '',
+        placeholderMen: this.imageForm['men30'] || '',
+        placeholderWomen: this.imageForm['women30'] || '',
+        placeholderMen30: this.imageForm['men30'] || '',
+        placeholderMen50: this.imageForm['men50'] || '',
+        placeholderMen100: this.imageForm['men100'] || '',
+        placeholderWomen30: this.imageForm['women30'] || '',
+        placeholderWomen50: this.imageForm['women50'] || '',
+        placeholderWomen100: this.imageForm['women100'] || '',
       });
       this.showToast('Placeholder images saved');
-    } catch { this.showToast('Save failed — are you signed in?'); }
+    } catch { this.showToast('Save failed - are you signed in?'); }
     finally { this.imagesSaving.set(false); }
   }
 
@@ -293,9 +299,20 @@ export class AppComponent {
     // Keep placeholder overrides + the Image Manager form in sync with live settings.
     effect(() => {
       const s = this.shopSvc.settings();
-      setPlaceholderOverrides(s?.placeholderMen, s?.placeholderWomen);
+      setPlaceholderOverrides(
+        s?.placeholderMen, s?.placeholderWomen,
+        s?.placeholderMen30, s?.placeholderMen50, s?.placeholderMen100,
+        s?.placeholderWomen30, s?.placeholderWomen50, s?.placeholderWomen100,
+      );
       if (s && !this.imagesLoaded) {
-        this.imageForm = { men: s.placeholderMen || '', women: s.placeholderWomen || '' };
+        this.imageForm = {
+          men30: s.placeholderMen30 || s.placeholderMen || '',
+          men50: s.placeholderMen50 || s.placeholderMen || '',
+          men100: s.placeholderMen100 || s.placeholderMen || '',
+          women30: s.placeholderWomen30 || s.placeholderWomen || '',
+          women50: s.placeholderWomen50 || s.placeholderWomen || '',
+          women100: s.placeholderWomen100 || s.placeholderWomen || '',
+        };
         this.imagesLoaded = true;
       }
     });

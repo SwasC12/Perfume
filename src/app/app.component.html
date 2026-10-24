@@ -20,6 +20,9 @@
           <app-icon name="receipt" [size]="18" /> Orders
           @if (shopSvc.pendingOrderCount() > 0) { <span class="count alert">{{ shopSvc.pendingOrderCount() }}</span> }
         </button>
+        <button class="nav-item" [class.active]="tab() === 'scanner'" (click)="go('scanner')">
+          <app-icon name="qr" [size]="18" /> Scan &amp; QR
+        </button>
         <button class="nav-item" [class.active]="tab() === 'products'" (click)="go('products')">
           <app-icon name="package" [size]="18" /> Products <span class="count">{{ shopSvc.products().length }}</span>
         </button>
@@ -345,6 +348,11 @@
         }
       }
     </section>
+  }
+
+  <!-- ============ SCANNER (admin) ============ -->
+  @if (tab() === 'scanner') {
+    <app-scanner />
   }
 
   <!-- ============ ORDERS (admin) ============ -->

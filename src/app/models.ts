@@ -227,6 +227,12 @@ export interface StoreSettings {
   // Custom placeholder images (data URLs) set from the Image Manager tab.
   placeholderMen?: string;
   placeholderWomen?: string;
+  placeholderMen30?: string;
+  placeholderMen50?: string;
+  placeholderMen100?: string;
+  placeholderWomen30?: string;
+  placeholderWomen50?: string;
+  placeholderWomen100?: string;
   updatedAt?: number;
 }
 

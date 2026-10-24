@@ -1,0 +1,24 @@
+.scanner-view { max-width: 1100px; }
+.scanner-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.scanner-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; align-items: start; }
+.scan-panel, .gen-panel { padding: 18px; }
+.scan-frame { position: relative; aspect-ratio: 4 / 3; background: #141210; border-radius: 6px; overflow: hidden; display: grid; place-items: center; }
+.scan-frame video { width: 100%; height: 100%; object-fit: cover; }
+.scan-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #f7f4ef; text-align: center; }
+.scan-icon { font-size: 42px; opacity: .7; }
+.scan-idle p { margin: 0; color: #cfc7bb; font-size: 13px; }
+.scan-line { position: absolute; left: 8%; right: 8%; top: 50%; height: 1px; background: rgba(217,199,171,.8); box-shadow: 0 0 14px rgba(217,199,171,.8); animation: scanline 2.4s ease-in-out infinite; }
+@keyframes scanline { 0%,100% { top: 22%; opacity:.4; } 50% { top: 78%; opacity:1; } }
+.scan-last { font-size: 12px; color: var(--ink-dim); word-break: break-all; }
+.scan-result { border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; margin-top: 12px; }
+.result-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.scan-result p { margin: 6px 0 0; font-size: 13px; }
+.scan-list { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.scan-list-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.scan-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.gen-panel h2 { margin: 0 0 6px; font-size: 20px; }
+.gen-panel label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-dim); margin: 12px 0; }
+.gen-panel input, .gen-panel select { width: 100%; margin-top: 5px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; font: inherit; background: #fffdf9; }
+.qr-preview { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 16px; }
+.qr-preview img { width: 200px; height: 200px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+@media (max-width: 800px) { .scanner-grid { grid-template-columns: 1fr; } }
