@@ -31,12 +31,12 @@ export class EmailService {
   }
 
   /** Notify the customer their order is paid / on its way. Fire-and-forget. */
-  status(order: Order, status: Extract<OrderStatus, 'paid' | 'fulfilled'>): void {
+  status(order: Order, status: Extract<OrderStatus, 'paid' | 'fulfilled' | 'shipped' | 'delivered'>): void {
     if (!order.customer?.email) return;
     void this.sendStatus(order, status);
   }
 
-  private async sendStatus(order: Order, status: Extract<OrderStatus, 'paid' | 'fulfilled'>): Promise<void> {
+  private async sendStatus(order: Order, status: Extract<OrderStatus, 'paid' | 'fulfilled' | 'shipped' | 'delivered'>): Promise<void> {
     try {
       const headers = await this.headers();
       await fetch(ENDPOINT, {

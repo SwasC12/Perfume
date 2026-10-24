@@ -495,6 +495,8 @@ body {
 .status-pill[data-status="pending"] { background: var(--warn-soft); color: var(--warn); }
 .status-pill[data-status="paid"] { background: #e2ecfa; color: #3b74c4; }
 .status-pill[data-status="fulfilled"] { background: var(--ok-soft); color: var(--ok); }
+.status-pill[data-status="shipped"] { background: var(--accent-soft); color: var(--accent-dark); }
+.status-pill[data-status="delivered"] { background: var(--ok-soft); color: var(--ok); }
 .order-customer { display: flex; flex-direction: column; gap: 2px; margin: 10px 0; font-size: 13.5px; }
 .order-customer a { color: var(--accent); text-decoration: none; }
 .order-note { color: var(--ink-dim); font-style: italic; margin-top: 2px; }
@@ -835,6 +837,15 @@ h1, h2, h3, .brand, .editor-title, .panel-title, .inv-brand {
 .tracking-row .btn { flex: none; }
 .linkbtn { background: none; border: 0; padding: 0; margin: -4px 0 10px; color: var(--accent); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
 .linkbtn:hover { text-decoration: underline; }
+.size-editor { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 14px; }
+.size-row { border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; background: var(--bg); }
+.size-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.size-row-head strong { font-family: var(--display); letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
+.size-img-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.pos-size-select { border: 1px solid var(--line); border-radius: 2px; padding: 4px 6px; font-size: 11px; background: var(--surface); color: var(--ink); }
+.customer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0 18px; }
+.customer-grid p { margin: 4px 0 0; font-size: 13px; color: var(--ink); line-height: 1.5; }
+@media (max-width: 700px) { .customer-grid { grid-template-columns: 1fr; } }
 .inv-brand { letter-spacing: 0.12em; }
 .inv-tag { font-family: "Playfair Display", serif; }
 .kpi-label, .editor-hint, .panel-title { letter-spacing: 0.01em; }

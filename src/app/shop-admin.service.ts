@@ -227,14 +227,23 @@ export class ShopAdminService {
     const prods = this.products();
     for (const it of items) {
       const p = prods.find((x) => x.id === it.productId);
-      if (p && p.stockQty != null) {
-        const next = Math.max(0, p.stockQty - it.qty);
-        try {
+      if (!p) continue;
+      try {
+        if (it.sizeKey && p.sizes && p.sizes[it.sizeKey]) {
+          const sizes = JSON.parse(JSON.stringify(p.sizes));
+          const size = sizes[it.sizeKey];
+          if (size.stockQty == null) continue;
+          const next = Math.max(0, Number(size.stockQty) - it.qty);
+          size.stockQty = next;
+          if (next <= 0) size.inStock = false;
+          await updateDoc(doc(getDb(), 'products', p.id), { sizes, updatedAt: Date.now() });
+        } else if (p.stockQty != null) {
+          const next = Math.max(0, p.stockQty - it.qty);
           await updateDoc(doc(getDb(), 'products', p.id), {
             stockQty: next, inStock: next > 0 ? p.inStock : false, updatedAt: Date.now(),
           });
-        } catch { /* skip */ }
-      }
+        }
+      } catch { /* skip */ }
     }
   }
 
@@ -246,12 +255,20 @@ export class ShopAdminService {
         const snap = await getDoc(doc(getDb(), 'products', it.productId));
         if (!snap.exists()) continue;
         const p = snap.data() as Product;
-        if (p.stockQty == null) continue;
-        await updateDoc(doc(getDb(), 'products', it.productId), {
-          stockQty: increment(it.qty),
-          inStock: true,
-          updatedAt: Date.now(),
-        });
+        if (it.sizeKey && p.sizes && p.sizes[it.sizeKey]) {
+          const sizes = JSON.parse(JSON.stringify(p.sizes));
+          const size = sizes[it.sizeKey];
+          if (size.stockQty == null) continue;
+          size.stockQty = Number(size.stockQty) + it.qty;
+          size.inStock = true;
+          await updateDoc(doc(getDb(), 'products', it.productId), { sizes, updatedAt: Date.now() });
+        } else if (p.stockQty != null) {
+          await updateDoc(doc(getDb(), 'products', it.productId), {
+            stockQty: increment(it.qty),
+            inStock: true,
+            updatedAt: Date.now(),
+          });
+        }
       } catch { /* keep restoring the rest */ }
     }
     await updateDoc(doc(getDb(), 'orders', order.id), {

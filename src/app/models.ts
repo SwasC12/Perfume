@@ -35,6 +35,25 @@ export interface WishlistItem {
 }
 
 // ---- Shop (shared with the Kauā Fragrances storefront) ----
+
+export type ProductSizeKey = 'size30' | 'size50' | 'size100';
+export const PRODUCT_SIZE_KEYS: ProductSizeKey[] = ['size30', 'size50', 'size100'];
+export const PRODUCT_SIZE_LABELS: Record<ProductSizeKey, string> = {
+  size30: '30ml',
+  size50: '50ml',
+  size100: '100ml',
+};
+
+export interface ProductSize {
+  size: string;
+  price: number;
+  salePrice?: number | null;
+  cost?: number | null;
+  stockQty: number | null;
+  inStock: boolean;
+  imageUrl?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -46,6 +65,7 @@ export interface Product {
   inStock: boolean;
   active: boolean;
   imageUrl?: string;
+  sizes?: Partial<Record<ProductSizeKey, ProductSize>>;
   gallery?: string[];
   category?: string;
   gender?: string;
@@ -86,6 +106,7 @@ export const EXPENSE_CATEGORIES = ['Oils', 'Bottles', 'Packaging', 'Labels', 'Ma
 
 export interface OrderItem {
   productId: string;
+  sizeKey?: ProductSizeKey;
   name: string;
   size?: string;
   price: number;
@@ -150,7 +171,7 @@ export interface RestockRequest {
   notified: boolean;
 }
 
-export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'cancelled';
+export type OrderStatus = 'pending' | 'paid' | 'fulfilled' | 'shipped' | 'delivered' | 'cancelled';
 export type DeliveryMethod = 'delivery' | 'collection';
 export type FulfilStage = 'placed' | 'mixed' | 'labelled' | 'packaged' | 'shipped';
 export const FULFIL_STAGES: FulfilStage[] = ['placed', 'mixed', 'labelled', 'packaged', 'shipped'];
@@ -217,6 +238,42 @@ export interface Banner {
   ctaText?: string;
   ctaLink?: string;
   active: boolean;
+}
+
+export function sizeOptions(p: Product): { key: ProductSizeKey; size: ProductSize }[] {
+  const out: { key: ProductSizeKey; size: ProductSize }[] = [];
+  if (p.sizes) {
+    for (const key of PRODUCT_SIZE_KEYS) {
+      const size = p.sizes[key];
+      if (size && Number(size.price) > 0) out.push({ key, size });
+    }
+  }
+  if (out.length) return out;
+  if (Number(p.price) > 0) {
+    out.push({ key: 'size30', size: {
+      size: p.size || 'Default', price: p.price, salePrice: p.salePrice, cost: p.cost,
+      stockQty: p.stockQty, inStock: p.inStock, imageUrl: p.imageUrl,
+    }});
+  }
+  return out;
+}
+
+export function sizeEffectivePrice(s: ProductSize): number {
+  return s.salePrice != null && Number(s.salePrice) > 0 && Number(s.salePrice) < Number(s.price)
+    ? Number(s.salePrice) : Number(s.price) || 0;
+}
+
+export function sizeOnSale(s: ProductSize): boolean {
+  return s.salePrice != null && Number(s.salePrice) > 0 && Number(s.salePrice) < Number(s.price);
+}
+
+export function fromPrice(p: Product): number {
+  const opts = sizeOptions(p);
+  return opts.length ? Math.min(...opts.map((o) => sizeEffectivePrice(o.size))) : Number(p.price) || 0;
+}
+
+export function sizeAvailable(s: ProductSize): boolean {
+  return !!s.inStock && (s.stockQty == null || Number(s.stockQty) > 0);
 }
 
 export interface SiteContent {

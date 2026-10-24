@@ -15,11 +15,11 @@ import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
-import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review } from './models';
+import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review, PRODUCT_SIZE_KEYS, PRODUCT_SIZE_LABELS, ProductSize, ProductSizeKey, fromPrice, sizeOptions, sizeEffectivePrice, sizeOnSale, sizeAvailable } from './models';
 
 type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews';
 
-interface PosLine { product: Product; qty: number; }
+interface PosLine { product: Product; sizeKey?: ProductSizeKey; qty: number; }
 interface PosSale {
   items: OrderItem[]; subtotal: number; total: number;
   customerName: string; paymentMethod: string; status: OrderStatus;
@@ -59,8 +59,19 @@ interface WishForm {
   notes: string;
 }
 
+interface ProductSizeForm {
+  size: string;
+  price: number | null;
+  salePrice: number | null;
+  cost: number | null;
+  stockQty: number | null;
+  inStock: boolean;
+  imageUrl: string;
+}
+
 interface ProductForm {
   name: string;
+  sizes: Record<ProductSizeKey, ProductSizeForm>;
   description: string;
   size: string;
   price: number | null;
@@ -120,6 +131,16 @@ export class AppComponent {
   productModalOpen = signal(false);
   editingProductId: string | null = null;
   productForm: ProductForm = this.emptyProductForm();
+  readonly sizeRows = PRODUCT_SIZE_KEYS.map((key) => ({ key, label: PRODUCT_SIZE_LABELS[key] }));
+  startingPrice(p: Product): number { return fromPrice(p); }
+  productInStock(p: Product): boolean {
+    const opts = sizeOptions(p);
+    return opts.length ? opts.some((o) => sizeAvailable(o.size)) : p.inStock;
+  }
+  hasMultipleSizes(p: Product): boolean { return sizeOptions(p).length > 1; }
+  posSizes(p: Product) { return sizeOptions(p); }
+  posLineTotal(l: PosLine): number { return this.posUnit(l) * l.qty; }
+  sizeLabels(p: Product): string { return sizeOptions(p).map((o) => o.size.size).join(' · ') || '—'; }
 
   // ---- Storefront content (CMS) ----
   contentForm: SiteContent = { banners: [] };
@@ -214,9 +235,13 @@ export class AppComponent {
       .filter((p) => p.active !== false)
       .filter((p) => (q ? p.name.toLowerCase().includes(q) || (p.inspiredBy ?? '').toLowerCase().includes(q) : true));
   });
-  readonly posSubtotal = computed(() => this.posCart().reduce((s, l) => s + this.effPrice(l.product) * l.qty, 0));
+  private posUnit(l: PosLine): number {
+    const s = l.sizeKey ? l.product.sizes?.[l.sizeKey] : null;
+    return s ? sizeEffectivePrice(s) : this.effPrice(l.product);
+  }
+  readonly posSubtotal = computed(() => this.posCart().reduce((s, l) => s + this.posUnit(l) * l.qty, 0));
   private posLines(): DiscountLine[] {
-    return this.posCart().map((l) => ({ unitPrice: this.effPrice(l.product), qty: l.qty }));
+    return this.posCart().map((l) => ({ unitPrice: this.posUnit(l), qty: l.qty }));
   }
   readonly posDiscountAmount = computed(() => {
     const d = this.posDiscount();
@@ -231,6 +256,22 @@ export class AppComponent {
     effect(() => {
       if (this.authSvc.isAdmin) this.shopSvc.start();
       else this.shopSvc.stop();
+    });
+    // Attention chime when a new order arrives (desktop admin).
+    effect(() => {
+      if (!this.authSvc.isAdmin) { this.lastOrderCount = -1; this.ordersInitialized = false; return; }
+      if (this.shopSvc.loadingOrders()) return;
+      const count = this.shopSvc.orders().length;
+      if (!this.ordersInitialized) {
+        this.ordersInitialized = true;
+        this.lastOrderCount = count;
+        return;
+      }
+      if (count > this.lastOrderCount && this.lastOrderCount > 0) {
+        this.showToast('New order received');
+        this.playChime();
+      }
+      this.lastOrderCount = count;
     });
     // Load site content into the editable form once it arrives.
     effect(() => {
@@ -348,14 +389,27 @@ export class AppComponent {
     return p.salePrice != null && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
   }
   posAdd(p: Product): void {
+    const sizeKey = sizeOptions(p)[0]?.key;
     this.posCart.update((list) => {
-      const ex = list.find((l) => l.product.id === p.id);
-      return ex ? list.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l)) : [...list, { product: p, qty: 1 }];
+      const ex = list.find((l) => l.product.id === p.id && l.sizeKey === sizeKey);
+      return ex
+        ? list.map((l) => (l === ex ? { ...l, qty: l.qty + 1 } : l))
+        : [...list, { product: p, sizeKey, qty: 1 }];
     });
   }
-  posSetQty(id: string, qty: number): void {
-    if (qty <= 0) { this.posCart.update((l) => l.filter((x) => x.product.id !== id)); return; }
-    this.posCart.update((l) => l.map((x) => (x.product.id === id ? { ...x, qty } : x)));
+  posSetQty(id: string, qty: number, sizeKey?: ProductSizeKey): void {
+    if (qty <= 0) {
+      this.posCart.update((l) => l.filter((x) => !(x.product.id === id && x.sizeKey === sizeKey)));
+      return;
+    }
+    this.posCart.update((l) => l.map((x) => (x.product.id === id && x.sizeKey === sizeKey ? { ...x, qty } : x)));
+  }
+  posChangeSize(id: string, oldKey: ProductSizeKey | undefined, newKey: ProductSizeKey): void {
+    this.posCart.update((list) => {
+      const line = list.find((x) => x.product.id === id && x.sizeKey === oldKey);
+      if (!line) return list;
+      return list.map((x) => (x === line ? { ...x, sizeKey: newKey } : x));
+    });
   }
   posClear(): void {
     this.posCart.set([]); this.posCustomer = ''; this.posCash = null;
@@ -377,7 +431,17 @@ export class AppComponent {
   async posCheckout(): Promise<void> {
     const lines = this.posCart();
     if (!lines.length) return;
-    const items = lines.map((l) => ({ productId: l.product.id, name: l.product.name, size: l.product.size, price: this.effPrice(l.product), qty: l.qty }));
+    const items = lines.map((l) => {
+      const s = l.sizeKey ? l.product.sizes?.[l.sizeKey] : null;
+      return {
+        productId: l.product.id,
+        sizeKey: l.sizeKey,
+        name: l.product.name,
+        size: s?.size || l.product.size,
+        price: this.posUnit(l),
+        qty: l.qty,
+      };
+    });
     const disc = this.posDiscountAmount();
     const sale = {
       items, subtotal: this.posSubtotal(), total: this.posTotal(),
@@ -452,7 +516,7 @@ export class AppComponent {
     return `R${profit.toFixed(0)} (${Math.round((profit / pr) * 100)}%)`;
   }
   private soldOrders(): Order[] {
-    return this.shopSvc.orders().filter((o) => o.status === 'paid' || o.status === 'fulfilled');
+    return this.shopSvc.orders().filter((o) => o.status === 'paid' || o.status === 'fulfilled' || o.status === 'shipped' || o.status === 'delivered');
   }
   private orderCogs(o: Order): number {
     return (o.items || []).reduce((s, i) => s + this.productCost(i.productId) * i.qty, 0);
@@ -705,6 +769,38 @@ export class AppComponent {
   });
 
   // Customers with order stats.
+  readonly selectedCustomer = signal<CustomerProfile | null>(null);
+  private lastOrderCount = -1;
+  private ordersInitialized = false;
+  readonly selectedCustomerOrders = computed<Order[]>(() => {
+    const c = this.selectedCustomer();
+    if (!c) return [];
+    return this.shopSvc.orders().filter((o) => o.uid === c.uid);
+  });
+
+  openCustomer(c: CustomerProfile): void { this.selectedCustomer.set(c); }
+
+  private playChime(): void {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = 880;
+      osc.connect(gain); gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.start(); osc.stop(ctx.currentTime + 0.36);
+    } catch { /* audio unavailable */ }
+  }
+
+  addressText(a: any): string {
+    if (!a) return '';
+    return [a.line1, a.line2, a.city, a.province, a.postalCode, a.country].filter(Boolean).join(', ');
+  }
+
   readonly customerStats = computed(() => {
     const byUid = new Map<string, { orders: number; spent: number }>();
     for (const o of this.shopSvc.orders()) {
@@ -1083,30 +1179,54 @@ export class AppComponent {
       notesHeart: p.notesHeart ?? '',
       notesBase: p.notesBase ?? '',
       longDescription: p.longDescription ?? '',
+      sizes: {
+        size30: this.sizeFormFrom(p.sizes?.size30 || {
+          size: p.size || '30ml', price: p.price, salePrice: p.salePrice, cost: p.cost,
+          stockQty: p.stockQty, inStock: p.inStock, imageUrl: p.imageUrl,
+        }, '30ml'),
+        size50: this.sizeFormFrom(p.sizes?.size50, '50ml'),
+        size100: this.sizeFormFrom(p.sizes?.size100, '100ml'),
+      },
     };
     this.productModalOpen.set(true);
   }
 
   async saveProduct(): Promise<void> {
     const name = this.productForm.name.trim();
-    const price = this.numOrNull(this.productForm.price);
-    if (!name || price == null) {
-      this.showToast('Name and price are required');
+    const sizes: Partial<Record<ProductSizeKey, ProductSize>> = {};
+    for (const key of PRODUCT_SIZE_KEYS) {
+      const row = this.productForm.sizes[key];
+      const price = this.numOrNull(row.price);
+      if (price == null || price <= 0) continue;
+      sizes[key] = {
+        size: row.size.trim() || PRODUCT_SIZE_LABELS[key],
+        price,
+        salePrice: this.numOrNull(row.salePrice),
+        cost: this.numOrNull(row.cost),
+        stockQty: this.numOrNull(row.stockQty),
+        inStock: row.inStock,
+        imageUrl: row.imageUrl.trim() || undefined,
+      };
+    }
+    const s30 = sizes.size30;
+    if (!name || !s30) {
+      this.showToast('Name and a 30ml price are required');
       return;
     }
     const gallery = this.productForm.gallery.filter(Boolean);
     const payload = {
       name,
       description: this.productForm.description.trim() || undefined,
-      size: this.productForm.size.trim() || undefined,
-      price,
-      salePrice: this.numOrNull(this.productForm.salePrice),
-      cost: this.numOrNull(this.productForm.cost),
-      stockQty: this.numOrNull(this.productForm.stockQty),
-      inStock: this.productForm.inStock,
+      size: s30.size,
+      price: s30.price,
+      salePrice: s30.salePrice,
+      cost: s30.cost,
+      stockQty: s30.stockQty,
+      inStock: s30.inStock,
       active: this.productForm.active,
       featured: this.productForm.featured,
       imageUrl: this.productForm.imageUrl.trim() || undefined,
+      sizes,
       gallery: gallery.length ? gallery : undefined,
       category: this.productForm.category.trim() || undefined,
       gender: this.productForm.gender.trim() || undefined,
@@ -1154,6 +1274,18 @@ export class AppComponent {
     if (!file) return;
     try {
       this.productForm.imageUrl = await compressImage(file, 900, 0.82);
+    } catch {
+      this.showToast('Could not process that image');
+    }
+    input.value = '';
+  }
+
+  async onSizeImageFile(ev: Event, key: ProductSizeKey): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      this.productForm.sizes[key].imageUrl = await compressImage(file, 900, 0.82);
     } catch {
       this.showToast('Could not process that image');
     }
@@ -1383,7 +1515,7 @@ export class AppComponent {
   // ---------- Orders ----------
   async setOrderStatus(o: Order, status: OrderStatus): Promise<void> {
     // Safety gate: never fulfil until every fulfilment step has been worked through.
-    if (status === 'fulfilled' && o.stage !== 'shipped') {
+    if ((status === 'fulfilled' || status === 'shipped' || status === 'delivered') && o.stage !== 'shipped') {
       this.showToast('Work through all fulfilment steps first');
       this.openOrderDetail(o);
       return;
@@ -1399,7 +1531,7 @@ export class AppComponent {
         await this.shopSvc.restoreStockForOrder(o);
         await this.shopSvc.releaseDiscount(o);
       }
-      if (status === 'paid' || status === 'fulfilled') this.emailSvc.status(o, status);
+      if (status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'delivered') this.emailSvc.status(o, status);
       this.showToast(`Order marked ${status}`);
     } catch {
       this.showToast('Update failed');
@@ -1511,7 +1643,7 @@ export class AppComponent {
       await this.shopSvc.setOrderStage(o.id, stage);
       this.selectedOrder.set({ ...o, stage });
       if (stage === 'shipped' && o.status !== 'fulfilled' && o.status !== 'cancelled') {
-        await this.shopSvc.setOrderStatus(o, 'fulfilled');
+        await this.shopSvc.setOrderStatus(o, 'shipped');
         this.emailSvc.status(o, 'fulfilled');
       }
       this.showToast(`Stage: ${stage}`);
@@ -1605,9 +1737,30 @@ export class AppComponent {
 
   private emptyProductForm(): ProductForm {
     return {
-      name: '', description: '', size: '', price: null, salePrice: null, cost: null, stockQty: null,
+      name: '', description: '', size: '30ml', price: null, salePrice: null, cost: null, stockQty: null,
       inStock: true, active: true, featured: false, imageUrl: '', gallery: [],
+      sizes: {
+        size30: this.emptySizeForm('30ml', true),
+        size50: this.emptySizeForm('50ml', false),
+        size100: this.emptySizeForm('100ml', false),
+      },
       category: '', gender: '', inspiredBy: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
+    };
+  }
+
+  private emptySizeForm(label: string, inStock = false): ProductSizeForm {
+    return { size: label, price: null, salePrice: null, cost: null, stockQty: null, inStock, imageUrl: '' };
+  }
+
+  private sizeFormFrom(s: ProductSize | undefined, label: string): ProductSizeForm {
+    return {
+      size: s?.size || label,
+      price: s?.price ?? null,
+      salePrice: s?.salePrice ?? null,
+      cost: s?.cost ?? null,
+      stockQty: s?.stockQty ?? null,
+      inStock: s?.inStock ?? false,
+      imageUrl: s?.imageUrl || '',
     };
   }
 }

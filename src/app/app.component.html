@@ -317,14 +317,13 @@
               <article class="card" [class.oos]="!p.active">
                 <div class="thumb">
                   <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
-                  <span class="badge" [class.ok]="p.inStock" [class.warn]="!p.inStock">{{ p.inStock ? 'In stock' : 'Out' }}</span>
+                  <span class="badge" [class.ok]="productInStock(p)" [class.warn]="!productInStock(p)">{{ productInStock(p) ? 'In stock' : 'Out' }}</span>
                   @if (!p.active) { <span class="badge manual">Hidden</span> }
                 </div>
                 <div class="body">
                   <h3 class="name">{{ p.name }}</h3>
-                  <p class="meta"><strong>{{ price(p.price) }}</strong>
-                    @if (p.size) { <span class="dim"> · {{ p.size }}</span> }
-                    @if (p.stockQty != null) { <span class="dim"> · {{ p.stockQty }} in stock</span> }
+                  <p class="meta"><strong>@if (hasMultipleSizes(p)) { <span class="dim">From </span> }{{ price(startingPrice(p)) }}</strong>
+                    <span class="dim"> · {{ sizeLabels(p) }}</span>
                   </p>
                   @if (p.description) { <p class="notes">{{ p.description }}</p> }
                 </div>
@@ -360,7 +359,7 @@
         </div>
       } @else {
         <div class="order-filters">
-          @for (f of ['all','pending','paid','fulfilled','cancelled']; track f) {
+          @for (f of ['all','pending','paid','fulfilled','shipped','delivered','cancelled']; track f) {
             <button class="chip" [class.active]="orderFilter() === f" (click)="orderFilter.set($any(f))">{{ f }}</button>
           }
           <input class="search order-search" type="search" name="orderSearch" placeholder="Search reference, customer, email…"
@@ -424,10 +423,13 @@
                     <button class="mini-btn" (click)="openOrderDetail(o)">Details</button>
                     @if (o.status === 'pending') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'paid')">Mark paid</button> }
                     @if (o.status === 'paid') {
-                      @if (o.stage === 'shipped') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'fulfilled')">Mark fulfilled</button> }
+                      @if (o.stage === 'shipped') { <button class="mini-btn ok" (click)="setOrderStatus(o, 'shipped')">Mark shipped</button> }
                       @else { <button class="mini-btn" (click)="openOrderDetail(o)">Fulfil steps</button> }
                     }
-                    @if (o.status !== 'cancelled' && o.status !== 'fulfilled') { <button class="mini-btn" (click)="setOrderStatus(o, 'cancelled')">Cancel</button> }
+                    @if (o.status === 'shipped' || o.status === 'fulfilled') {
+                      <button class="mini-btn ok" (click)="setOrderStatus(o, 'delivered')">Mark delivered</button>
+                    }
+                    @if (o.status !== 'cancelled' && o.status !== 'delivered') { <button class="mini-btn" (click)="setOrderStatus(o, 'cancelled')">Cancel</button> }
                     <button class="icon" title="Delete order" (click)="askDeleteOrder(o)"><app-icon name="trash" [size]="17" /></button>
                   </div>
                 </div>
@@ -800,12 +802,12 @@
           <div class="editor-card">
             <h3 class="editor-title">Delivery</h3>
             <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.deliveryEnabled" name="sDel" /> Offer delivery</label>
-            <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.collectionEnabled" name="sCol" /> Offer collection</label>
+            <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.collectionEnabled" name="sCol" /> Offer pickup (free)</label>
             <div class="row2">
               <label>Delivery fee (R) <input type="number" min="0" [(ngModel)]="settingsForm.deliveryFee" name="sFee" /></label>
               <label>Free delivery over (R) <input type="number" min="0" [(ngModel)]="settingsForm.freeDeliveryThreshold" name="sThr" placeholder="blank = never" /></label>
             </div>
-            <label>Collection note <input type="text" [(ngModel)]="settingsForm.collectionNote" name="sColNote" placeholder="Where/how customers collect" /></label>
+            <label>Pickup note <input type="text" [(ngModel)]="settingsForm.collectionNote" name="sColNote" placeholder="Where/how customers collect" /></label>
           </div>
 
           <div class="editor-card">
@@ -882,7 +884,7 @@
                       <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
                     </div>
                     <span class="pos-prod-name">{{ p.name }}</span>
-                    <span class="pos-prod-price">{{ price(effPrice(p)) }}</span>
+                    <span class="pos-prod-price">@if (hasMultipleSizes(p)) { <span class="dim">From </span> }{{ price(startingPrice(p)) }}</span>
                   </button>
                 }
               </div>
@@ -895,15 +897,20 @@
               <p class="editor-hint">Tap products to add them to the sale.</p>
             } @else {
               <div class="pos-lines">
-                @for (l of posCart(); track l.product.id) {
+                @for (l of posCart(); track l.product.id + '|' + (l.sizeKey || '')) {
                   <div class="pos-line">
                     <span class="pos-line-name">{{ l.product.name }}</span>
+                    @if (posSizes(l.product).length > 1) {
+                      <select class="pos-size-select" [ngModel]="l.sizeKey" (ngModelChange)="posChangeSize(l.product.id, l.sizeKey, $event)">
+                        @for (o of posSizes(l.product); track o.key) { <option [value]="o.key">{{ o.size.size }}</option> }
+                      </select>
+                    }
                     <div class="qty-row small">
-                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty - 1)"><app-icon name="minus" [size]="14" /></button>
+                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty - 1, l.sizeKey)"><app-icon name="minus" [size]="14" /></button>
                       <span class="qval">{{ l.qty }}</span>
-                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty + 1)"><app-icon name="plus" [size]="14" /></button>
+                      <button class="qbtn" (click)="posSetQty(l.product.id, l.qty + 1, l.sizeKey)"><app-icon name="plus" [size]="14" /></button>
                     </div>
-                    <span class="pos-line-total">{{ price(effPrice(l.product) * l.qty) }}</span>
+                    <span class="pos-line-total">{{ price(posLineTotal(l)) }}</span>
                   </div>
                 }
               </div>
@@ -995,7 +1002,7 @@
       } @else {
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Spent</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Spent</th><th></th></tr></thead>
             <tbody>
               @for (c of customerStats(); track c.uid) {
                 <tr>
@@ -1004,10 +1011,42 @@
                   <td>{{ c.phone || '—' }}</td>
                   <td>{{ c.orders }}</td>
                   <td>{{ price(c.spent) }}</td>
+                  <td><button class="mini-btn" (click)="openCustomer(c)">Details</button></td>
                 </tr>
               }
             </tbody>
           </table>
+        </div>
+      }
+
+      @if (selectedCustomer(); as c) {
+        <div class="overlay" (click)="selectedCustomer.set(null)">
+          <div class="modal wide" (click)="$event.stopPropagation()">
+            <h2>{{ c.name || 'Customer' }}</h2>
+            <p class="editor-hint">{{ c.email }}@if (c.phone) { · {{ c.phone }} }</p>
+            <div class="customer-grid">
+              <div>
+                <div class="inv-label">Delivery address</div>
+                <p>{{ addressText(c.delivery) || '—' }}</p>
+              </div>
+              <div>
+                <div class="inv-label">Billing address</div>
+                <p>{{ addressText(c.billing) || '—' }}</p>
+              </div>
+            </div>
+            <h3 class="panel-title">Orders ({{ selectedCustomerOrders().length }})</h3>
+            @for (o of selectedCustomerOrders(); track o.id) {
+              <button class="dash-row" (click)="selectedCustomer.set(null); openOrderDetail(o)">
+                <span><strong>{{ o.reference }}</strong> · {{ orderDate(o.createdAt) }}</span>
+                <span>{{ price(o.total) }} · {{ o.status }}</span>
+              </button>
+            } @empty {
+              <p class="editor-hint">No orders yet.</p>
+            }
+            <div class="modal-actions">
+              <button class="btn" (click)="selectedCustomer.set(null)">Close</button>
+            </div>
+          </div>
         </div>
       }
     </section>
@@ -1317,30 +1356,47 @@
           <label>Name*
             <input type="text" [(ngModel)]="productForm.name" name="pname" required autofocus />
           </label>
-          <div class="row">
-            <label>Price (R)*
-              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.price" name="pprice" required />
-            </label>
-            <label>Sale price (R)
-              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.salePrice" name="psale" placeholder="optional" />
-            </label>
-          </div>
-          <div class="row">
-            <label>Cost per unit (R)
-              <input type="number" min="0" step="0.01" [(ngModel)]="productForm.cost" name="pcost" placeholder="what it costs you" />
-            </label>
-            <label>Size
-              <input type="text" [(ngModel)]="productForm.size" name="psize" placeholder="e.g. 50ml" />
-            </label>
-          </div>
-          <div class="row">
-            <label>Stock quantity
-              <input type="number" min="0" [(ngModel)]="productForm.stockQty" name="pqty" placeholder="optional" />
-            </label>
-            @if (productForm.price && productForm.cost) {
-              <label>Margin
-                <input type="text" [value]="marginLabel(productForm.price, productForm.cost)" disabled />
-              </label>
+          <h3 class="panel-title" style="margin-top:6px">Sizes &amp; pricing</h3>
+          <p class="editor-hint">Set a price for each size you sell. Per-size photos are optional — the default image is used when one isn't set.</p>
+          <div class="size-editor">
+            @for (row of sizeRows; track row.key) {
+              <div class="size-row">
+                <div class="size-row-head">
+                  <strong>{{ row.label }}</strong>
+                  @if (productForm.sizes[row.key].price && productForm.sizes[row.key].cost) {
+                    <span class="dim">{{ marginLabel(productForm.sizes[row.key].price, productForm.sizes[row.key].cost) }}</span>
+                  }
+                </div>
+                <div class="row">
+                  <label>Price (R)
+                    <input type="number" min="0" step="0.01" [(ngModel)]="productForm.sizes[row.key].price" [name]="row.key + 'price'" placeholder="0.00" />
+                  </label>
+                  <label>Sale price (R)
+                    <input type="number" min="0" step="0.01" [(ngModel)]="productForm.sizes[row.key].salePrice" [name]="row.key + 'sale'" placeholder="optional" />
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Cost (R)
+                    <input type="number" min="0" step="0.01" [(ngModel)]="productForm.sizes[row.key].cost" [name]="row.key + 'cost'" placeholder="what it costs you" />
+                  </label>
+                  <label>Stock quantity
+                    <input type="number" min="0" [(ngModel)]="productForm.sizes[row.key].stockQty" [name]="row.key + 'qty'" placeholder="optional" />
+                  </label>
+                </div>
+                <label class="chk inline">
+                  <input type="checkbox" [(ngModel)]="productForm.sizes[row.key].inStock" [name]="row.key + 'instock'" /> In stock for this size
+                </label>
+                <div class="size-img-row">
+                  <div class="img-prev" [class.empty]="!productForm.sizes[row.key].imageUrl">
+                    @if (productForm.sizes[row.key].imageUrl) { <img [src]="productForm.sizes[row.key].imageUrl" alt="" /> }
+                    @else { <app-icon name="package" [size]="26" /> }
+                  </div>
+                  <label class="btn file-btn">Upload {{ row.label }} photo<input type="file" accept="image/*" (change)="onSizeImageFile($event, row.key)" hidden /></label>
+                  @if (productForm.sizes[row.key].imageUrl) {
+                    <button type="button" class="mini-btn" (click)="productForm.sizes[row.key].imageUrl=''">Remove</button>
+                  }
+                </div>
+              </div>
             }
           </div>
           <div class="row">
@@ -1359,7 +1415,7 @@
           <label>Inspired by (smells like)
             <input type="text" [(ngModel)]="productForm.inspiredBy" name="pinsp" placeholder="e.g. Tom Ford Oud Wood" />
           </label>
-          <label>Main image</label>
+          <label>Default product image</label>
           <div class="img-field">
             <div class="img-prev" [class.empty]="!productForm.imageUrl">
               @if (productForm.imageUrl) { <img [src]="productForm.imageUrl" alt="" /> }
@@ -1393,7 +1449,6 @@
             <textarea rows="3" [(ngModel)]="productForm.longDescription" name="plong"></textarea>
           </label>
           <div class="row">
-            <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.inStock" name="pinstock" /> In stock</label>
             <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.active" name="pactive" /> Show on shop</label>
             <label class="chk inline"><input type="checkbox" [(ngModel)]="productForm.featured" name="pfeat" /> Featured</label>
           </div>
