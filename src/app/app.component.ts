@@ -184,6 +184,29 @@ export class AppComponent {
     input.value = '';
   }
   resetPlaceholder(key: string): void { this.imageForm[key] = ''; }
+
+  /** Hero + banner images upload straight to Cloudinary from the admin. */
+  async uploadHero(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      this.contentForm.heroImageUrl = await imageFromFile(file, 2000, 0.86, 'kaua/banners');
+      this.showToast('Hero image uploaded');
+    } catch { this.showToast('Could not upload that image'); }
+    input.value = '';
+  }
+
+  async uploadBanner(b: { imageUrl?: string }, ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      b.imageUrl = await imageFromFile(file, 1800, 0.86, 'kaua/banners');
+      this.showToast('Banner image uploaded');
+    } catch { this.showToast('Could not upload that image'); }
+    input.value = '';
+  }
   async saveImages(): Promise<void> {
     this.imagesSaving.set(true);
     try {
