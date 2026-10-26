@@ -10,7 +10,8 @@ import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
 import { ScannerComponent } from './features/scanner/scanner.component';
 import { STARTER_CATALOGUE } from './starter-catalogue';
-import { compressImage } from './image-util';
+import { imageFromFile } from './cloudinary';
+import { cueForMessage, play } from './ui-fx';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
@@ -178,7 +179,7 @@ export class AppComponent {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      this.imageForm[key] = await compressImage(file, 900, 0.85);
+      this.imageForm[key] = await imageFromFile(file, 1400, 0.85, 'kaua/placeholders');
     } catch { this.showToast('Could not read that image'); }
     input.value = '';
   }
@@ -1291,7 +1292,7 @@ export class AppComponent {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      this.productForm.imageUrl = await compressImage(file, 900, 0.82);
+      this.productForm.imageUrl = await imageFromFile(file, 1400, 0.85, 'kaua/products');
     } catch {
       this.showToast('Could not process that image');
     }
@@ -1303,7 +1304,7 @@ export class AppComponent {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      this.productForm.sizes[key].imageUrl = await compressImage(file, 900, 0.82);
+      this.productForm.sizes[key].imageUrl = await imageFromFile(file, 1400, 0.85, 'kaua/products');
     } catch {
       this.showToast('Could not process that image');
     }
@@ -1315,7 +1316,7 @@ export class AppComponent {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const url = await compressImage(file, 800, 0.72);
+      const url = await imageFromFile(file, 1200, 0.8, 'kaua/products');
       this.productForm.gallery = [...this.productForm.gallery, url];
     } catch {
       this.showToast('Could not process that image');
@@ -1741,6 +1742,7 @@ export class AppComponent {
   }
 
   showToast(msg: string): void {
+    play(cueForMessage(msg));
     this.toast.set(msg);
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => this.toast.set(null), 2400);

@@ -856,3 +856,6 @@ h1, h2, h3, .brand, .editor-title, .panel-title, .inv-brand {
   .order-search { flex: 1 1 100%; }
 }
 
+/* Modern overrides load last so they win without rewriting the legacy skin. */
+@import './ui-modern';
+
