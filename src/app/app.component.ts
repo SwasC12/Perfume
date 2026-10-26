@@ -120,6 +120,7 @@ export class AppComponent {
   readonly orderSearch = signal('');
   readonly trackingCourier = signal('');
   readonly trackingNumber = signal('');
+  readonly trackingUrl = signal('');
 
   // ---- Admin auth ----
   adminLoginOpen = signal(false);
@@ -1630,6 +1631,7 @@ export class AppComponent {
     this.selectedOrder.set(o);
     this.trackingCourier.set(o.courier || '');
     this.trackingNumber.set(o.trackingNumber || '');
+    this.trackingUrl.set(o.trackingUrl || '');
     this.qrDataUrl.set(null);
     QRCode.toDataURL(`KF-ORDER:${o.reference}`, { margin: 1, width: 200, color: { dark: '#141210', light: '#ffffff' } })
       .then((url) => this.qrDataUrl.set(url))
@@ -1641,8 +1643,10 @@ export class AppComponent {
     try {
       const courier = this.trackingCourier().trim();
       const waybill = this.trackingNumber().trim();
-      await this.shopSvc.setOrderTracking(o, courier, waybill);
-      const updated: Order = { ...o, courier: courier || undefined, trackingNumber: waybill || undefined };
+      let link = this.trackingUrl().trim();
+      if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
+      await this.shopSvc.setOrderTracking(o, courier, waybill, link);
+      const updated: Order = { ...o, courier: courier || undefined, trackingNumber: waybill || undefined, trackingUrl: link || undefined };
       this.selectedOrder.set(updated);
       // The customer must always be able to see where their parcel is.
       if (waybill) this.emailSvc.shipping(updated);

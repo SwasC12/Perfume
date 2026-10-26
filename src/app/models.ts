@@ -195,6 +195,7 @@ export interface Order {
   paymentMethod?: string; // cash | card | eft | yoco
   courier?: string;
   trackingNumber?: string;
+  trackingUrl?: string;
   stockReserved?: boolean;
   stockRestored?: boolean;
   discountCounted?: boolean;

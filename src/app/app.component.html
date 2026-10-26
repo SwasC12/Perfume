@@ -1527,10 +1527,13 @@
                    [ngModel]="trackingCourier()" (ngModelChange)="trackingCourier.set($event)" />
             <input type="text" name="trackno" placeholder="Tracking number"
                    [ngModel]="trackingNumber()" (ngModelChange)="trackingNumber.set($event)" />
+            <input type="url" name="trackurl" placeholder="Tracking link (https://…)"
+                   [ngModel]="trackingUrl()" (ngModelChange)="trackingUrl.set($event)" />
             <button class="btn" (click)="saveTracking(o)">Save</button>
           </div>
-          @if (o.courier || o.trackingNumber) {
-            <p class="editor-hint">Customer sees: {{ o.courier || 'Courier' }} · {{ o.trackingNumber || 'no tracking number yet' }}</p>
+          @if (o.courier || o.trackingNumber || o.trackingUrl) {
+            <p class="editor-hint">Customer sees: {{ o.courier || 'Courier' }} · {{ o.trackingNumber || 'no tracking number yet' }}
+              @if (o.trackingUrl) { · <a [href]="o.trackingUrl" target="_blank" rel="noopener">tracking link</a> }</p>
           }
         </div>
 

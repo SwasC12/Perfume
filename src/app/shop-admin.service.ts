@@ -305,14 +305,15 @@ export class ShopAdminService {
     } catch { /* non-fatal */ }
   }
 
-  async setOrderTracking(order: Order, courier: string, trackingNumber: string): Promise<void> {
+  async setOrderTracking(order: Order, courier: string, trackingNumber: string, trackingUrl = ''): Promise<void> {
     const c = courier.trim().slice(0, 80) || null;
     const t = trackingNumber.trim().slice(0, 80) || null;
+    const u = trackingUrl.trim().slice(0, 500) || null;
     const now = Date.now();
-    await updateDoc(doc(getDb(), 'orders', order.id), { courier: c, trackingNumber: t, updatedAt: now });
+    await updateDoc(doc(getDb(), 'orders', order.id), { courier: c, trackingNumber: t, trackingUrl: u, updatedAt: now });
     try {
       await setDoc(doc(getDb(), 'orderStatus', order.reference), {
-        reference: order.reference, courier: c, trackingNumber: t, updatedAt: now,
+        reference: order.reference, courier: c, trackingNumber: t, trackingUrl: u, updatedAt: now,
       }, { merge: true });
     } catch { /* non-fatal */ }
   }

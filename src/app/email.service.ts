@@ -57,6 +57,7 @@ export class EmailService {
           total: order.total,
           courier: order.courier || '',
           trackingNumber: order.trackingNumber || '',
+          trackingUrl: order.trackingUrl || '',
         }),
       });
     } catch {
