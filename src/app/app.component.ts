@@ -1548,7 +1548,8 @@ export class AppComponent {
         await this.shopSvc.restoreStockForOrder(o);
         await this.shopSvc.releaseDiscount(o);
       }
-      if (status === 'paid' || status === 'fulfilled' || status === 'shipped' || status === 'delivered') this.emailSvc.status(o, status);
+      if (status === 'shipped') this.emailSvc.shipping(o);
+      else if (status === 'paid' || status === 'fulfilled' || status === 'delivered') this.emailSvc.status(o, status);
       this.showToast(`Order marked ${status}`);
     } catch {
       this.showToast('Update failed');
@@ -1638,8 +1639,14 @@ export class AppComponent {
 
   async saveTracking(o: Order): Promise<void> {
     try {
-      await this.shopSvc.setOrderTracking(o, this.trackingCourier(), this.trackingNumber());
-      this.showToast('Tracking saved');
+      const courier = this.trackingCourier().trim();
+      const waybill = this.trackingNumber().trim();
+      await this.shopSvc.setOrderTracking(o, courier, waybill);
+      const updated: Order = { ...o, courier: courier || undefined, trackingNumber: waybill || undefined };
+      this.selectedOrder.set(updated);
+      // The customer must always be able to see where their parcel is.
+      if (waybill) this.emailSvc.shipping(updated);
+      this.showToast(waybill ? 'Tracking saved — customer emailed' : 'Tracking saved');
     } catch {
       this.showToast('Could not save tracking');
     }
@@ -1659,9 +1666,8 @@ export class AppComponent {
     try {
       await this.shopSvc.setOrderStage(o.id, stage);
       this.selectedOrder.set({ ...o, stage });
-      if (stage === 'shipped' && o.status !== 'fulfilled' && o.status !== 'cancelled') {
+      if (stage === 'shipped' && o.status !== 'shipped' && o.status !== 'delivered' && o.status !== 'cancelled') {
         await this.shopSvc.setOrderStatus(o, 'shipped');
-        this.emailSvc.status(o, 'fulfilled');
       }
       this.showToast(`Stage: ${stage}`);
     } catch { this.showToast('Update failed'); }
