@@ -8,6 +8,8 @@ import {
   onSnapshot,
   query,
   orderBy,
+  getDocs,
+  writeBatch,
   Unsubscribe,
 } from 'firebase/firestore';
 import { getDoc, setDoc, increment } from 'firebase/firestore';
@@ -358,6 +360,34 @@ export class ShopAdminService {
 
   async deleteProduct(id: string): Promise<void> {
     await deleteDoc(doc(getDb(), 'products', id));
+  }
+
+  /**
+   * Bulk-set the base price for one bottle size across the whole catalogue.
+   * Only products that actually have that size are touched; per-product prices
+   * and sale prices stay editable afterwards.
+   */
+  async setAllSizePrices(sizeKey: 'size30' | 'size50' | 'size100', price: number): Promise<number> {
+    const snap = await getDocs(collection(getDb(), 'products'));
+    const now = Date.now();
+    let updated = 0;
+    let pending = 0;
+    let batch = writeBatch(getDb());
+    for (const d of snap.docs) {
+      const data = d.data() as Product;
+      const sizes = data.sizes as Record<string, { price?: number }> | undefined;
+      if (!sizes || !sizes[sizeKey]) continue;
+      batch.update(d.ref, { ['sizes.' + sizeKey + '.price']: price, updatedAt: now });
+      pending++;
+      updated++;
+      if (pending >= 400) {
+        await batch.commit();
+        batch = writeBatch(getDb());
+        pending = 0;
+      }
+    }
+    if (pending) await batch.commit();
+    return updated;
   }
 
   // ---- Orders ----

@@ -117,6 +117,51 @@ export class AppComponent {
   readonly rumiInStockOnly = signal(false);
   readonly rumiSort = signal<'name' | 'price-asc' | 'price-desc' | 'stock'>('name');
   readonly productSearch = signal('');
+
+  // ---- Bulk pricing by size ----
+  readonly bulkRows = [
+    { key: 'size30' as const, label: '30 ml' },
+    { key: 'size50' as const, label: '50 ml' },
+    { key: 'size100' as const, label: '100 ml' },
+  ];
+  readonly bulkPrice = signal<{ size30: number | null; size50: number | null; size100: number | null }>(
+    this.loadBulkPrices(),
+  );
+  readonly bulkBusy = signal<string | null>(null);
+
+  private loadBulkPrices(): { size30: number | null; size50: number | null; size100: number | null } {
+    try {
+      const raw = localStorage.getItem('kf.bulkPrices');
+      if (raw) {
+        const p = JSON.parse(raw) as Record<string, number | null>;
+        return { size30: p['size30'] ?? null, size50: p['size50'] ?? null, size100: p['size100'] ?? null };
+      }
+    } catch { /* ignore */ }
+    return { size30: null, size50: null, size100: null };
+  }
+
+  setBulkPrice(key: 'size30' | 'size50' | 'size100', value: string): void {
+    const n = value === '' ? null : Number(value);
+    this.bulkPrice.update((p) => {
+      const next = { ...p, [key]: n };
+      try { localStorage.setItem('kf.bulkPrices', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  async applyBulkPrice(key: 'size30' | 'size50' | 'size100'): Promise<void> {
+    const price = Number(this.bulkPrice()[key]);
+    if (!(price > 0)) { this.showToast('Enter a price first'); return; }
+    this.bulkBusy.set(key);
+    try {
+      const n = await this.shopSvc.setAllSizePrices(key, price);
+      this.showToast(n ? n + ' product' + (n === 1 ? '' : 's') + ' updated' : 'No products have that size');
+    } catch {
+      this.showToast('Could not update prices');
+    } finally {
+      this.bulkBusy.set(null);
+    }
+  }
   readonly orderFilter = signal<'all' | OrderStatus>('all');
   readonly orderSearch = signal('');
   readonly trackingCourier = signal('');

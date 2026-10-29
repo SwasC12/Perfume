@@ -302,9 +302,29 @@
               <app-icon name="package" [size]="16" /> {{ cleaningImages() ? 'Clearing…' : 'Use placeholders (' + rumiImageCount() + ')' }}
             </button>
           }
-          <button class="btn" (click)="askSetAllPrices()"><app-icon name="tag" [size]="16" /> Set all to R200</button>
           <button class="btn" (click)="openBulkCost()"><app-icon name="chart" [size]="16" /> Set costs</button>
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
+        </div>
+
+        <div class="bulk-panel">
+          <div class="bulk-head">
+            <span class="bulk-title">Bulk pricing</span>
+            <span class="bulk-sub">Set one price for every product in a size. Individual prices and sale prices stay editable per product.</span>
+          </div>
+          @for (row of bulkRows; track row.key) {
+            <div class="bulk-row">
+              <span class="bulk-size">{{ row.label }}</span>
+              <div class="bulk-input">
+                <span class="bulk-cur">R</span>
+                <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"
+                       [ngModel]="bulkPrice()[row.key]" (ngModelChange)="setBulkPrice(row.key, $event)"
+                       [name]="'bulk-' + row.key" />
+              </div>
+              <button class="btn primary" (click)="applyBulkPrice(row.key)" [disabled]="bulkBusy() === row.key">
+                {{ bulkBusy() === row.key ? 'Applying…' : 'Apply to all ' + row.label }}
+              </button>
+            </div>
+          }
         </div>
 
         @if (filteredProducts().length === 0) {
