@@ -306,11 +306,16 @@
           <button class="btn primary" (click)="openAddProduct()"><app-icon name="plus" [size]="16" /> Add product</button>
         </div>
 
-        <div class="bulk-panel">
-          <div class="bulk-head">
-            <span class="bulk-title">Bulk pricing</span>
-            <span class="bulk-sub">Set one price for every product in a size. Individual prices and sale prices stay editable per product.</span>
-          </div>
+        <div class="bulk-panel" [class.open]="bulkOpen()">
+          <button type="button" class="bulk-head" (click)="bulkOpen.set(!bulkOpen())" [attr.aria-expanded]="bulkOpen()">
+            <span class="bulk-head-text">
+              <span class="bulk-title">Bulk pricing</span>
+              <span class="bulk-sub">One price for every product in a size — individual prices and sale prices stay editable.</span>
+            </span>
+            <span class="bulk-chev" [class.open]="bulkOpen()"></span>
+          </button>
+          @if (bulkOpen()) {
+          <div class="bulk-body">
           @for (row of bulkRows; track row.key) {
             <div class="bulk-row">
               <span class="bulk-size">{{ row.label }}</span>
@@ -324,6 +329,8 @@
                 {{ bulkBusy() === row.key ? 'Applying…' : 'Apply to all ' + row.label }}
               </button>
             </div>
+          }
+          </div>
           }
         </div>
 

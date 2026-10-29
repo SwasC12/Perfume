@@ -128,6 +128,7 @@ export class AppComponent {
     this.loadBulkPrices(),
   );
   readonly bulkBusy = signal<string | null>(null);
+  readonly bulkOpen = signal(false);
 
   private loadBulkPrices(): { size30: number | null; size50: number | null; size100: number | null } {
     try {
