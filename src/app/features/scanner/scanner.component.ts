@@ -1,7 +1,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, ElementRef, OnDestroy, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import jsQR from 'jsqr';
+import { readBarcodes } from 'zxing-wasm/reader';
 import QRCode from 'qrcode';
 import { ShopAdminService } from '../../shop-admin.service';
 import { Order, Product } from '../../models';
@@ -50,8 +50,13 @@ export class ScannerComponent implements OnDestroy {
       if (!video) return;
       video.srcObject = stream;
       await video.play();
+      // Native decoder where the browser has one (Android Chrome): QR + 1D.
       const Detector = (window as any).BarcodeDetector;
-      this.detector = Detector ? new Detector({ formats: ['qr_code'] }) : null;
+      let formats: string[] = [];
+      try {
+        formats = Detector && Detector.getSupportedFormats ? await Detector.getSupportedFormats() : [];
+      } catch { formats = []; }
+      this.detector = Detector && formats.length ? new Detector({ formats }) : null;
       this.scanning.set(true);
       this.loop();
     } catch {
@@ -81,33 +86,56 @@ export class ScannerComponent implements OnDestroy {
           .finally(() => { this.busy = false; });
       } else {
         const now = performance.now();
-        if (now - this.lastFrame >= 90) {
+        if (now - this.lastFrame >= 70) {
           this.lastFrame = now;
-          this.scanWithCanvas(video);
+          void this.scanWithCanvas(video).finally(() => { this.busy = false; });
+        } else {
+          this.busy = false;
         }
-        this.busy = false;
       }
     }
     this.raf = requestAnimationFrame(this.loop);
   };
 
-  private scanWithCanvas(video: HTMLVideoElement): void {
+  /**
+   * Decode a frame with zxing-wasm (QR *and* 1D barcodes). We only read the
+   * centre 70% — that's where the user aims — which cuts the pixel work in half
+   * and lets us run at ~14 fps instead of ~11 fps with jsQR's single-symbology,
+   * JS-only decoder.
+   */
+  private async scanWithCanvas(video: HTMLVideoElement): Promise<void> {
     const canvas = this.canvasRef?.nativeElement;
     if (!canvas) return;
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (!w || !h) return;
-    const scale = Math.min(1, 640 / Math.max(w, h));
-    const cw = Math.max(1, Math.round(w * scale));
-    const ch = Math.max(1, Math.round(h * scale));
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+
+    const rw = Math.max(1, Math.round(vw * 0.7));
+    const rh = Math.max(1, Math.round(vh * 0.7));
+    const sx = Math.round((vw - rw) / 2);
+    const sy = Math.round((vh - rh) / 2);
+    const scale = Math.min(1, 720 / Math.max(rw, rh));
+    const cw = Math.max(1, Math.round(rw * scale));
+    const ch = Math.max(1, Math.round(rh * scale));
+
     canvas.width = cw;
     canvas.height = ch;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, cw, ch);
-    const data = ctx.getImageData(0, 0, cw, ch);
-    const code = jsQR(data.data, cw, ch, { inversionAttempts: 'dontInvert' });
-    if (code?.data) this.onScan(code.data);
+    ctx.drawImage(video, sx, sy, rw, rh, 0, 0, cw, ch);
+    const frame = ctx.getImageData(0, 0, cw, ch);
+
+    try {
+      const results = await readBarcodes(frame, {
+        formats: ['QRCode', 'Code128', 'Code39', 'EAN13', 'EAN8', 'UPCA', 'UPCE', 'ITF', 'DataMatrix', 'PDF417', 'Aztec'],
+        tryHarder: false,
+        maxNumberOfSymbols: 1,
+      });
+      const hit = results && results[0];
+      if (hit && hit.text) this.onScan(hit.text);
+    } catch {
+      /* a bad frame must never stop the loop */
+    }
   }
 
   private onScan(raw: string): void {

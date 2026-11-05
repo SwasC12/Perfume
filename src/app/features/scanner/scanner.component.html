@@ -4,9 +4,9 @@
       <h1 class="page-title">Scan &amp; QR</h1>
       <p class="view-intro">Scan order or batch QR codes, check details, and mark parcels as shipped. Generate codes for orders, batches and products.</p>
     </div>
-    <button class="btn" (click)="scanning() ? stop() : start()">
-      {{ scanning() ? 'Stop camera' : 'Start camera' }}
-    </button>
+    @if (scanning()) {
+      <button class="btn" (click)="stop()">Stop camera</button>
+    }
   </div>
 
   <div class="scanner-grid">
