@@ -19,7 +19,7 @@ import { discountError, computeDiscount, discountSummary, DiscountLine } from '.
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review, PRODUCT_SIZE_KEYS, PRODUCT_SIZE_LABELS, ProductSize, ProductSizeKey, fromPrice, sizeOptions, sizeEffectivePrice, sizeOnSale, sizeAvailable } from './models';
 
-type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'scanner' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews';
+type Tab = 'oils' | 'wishlist' | 'rumi' | 'products' | 'orders' | 'scanner' | 'content' | 'dashboard' | 'settings' | 'pos' | 'customers' | 'discounts' | 'images' | 'budget' | 'reviews' | 'referrals';
 
 interface PosLine { product: Product; sizeKey?: ProductSizeKey; qty: number; }
 interface PosSale {
@@ -801,11 +801,20 @@ export class AppComponent {
       case 'settings': return 'Settings';
       case 'pos': return 'Point of Sale';
       case 'customers': return 'Customers';
+      case 'referrals': return 'Referrals';
       case 'discounts': return 'Discounts';
       case 'images': return 'Image Manager';
       case 'reviews': return 'Reviews';
       default: return '';
     }
+  }
+
+  /** How many paid orders were placed with a given referral code. */
+  referralUses(code: string): number {
+    return this.shopSvc.orders().filter((o) =>
+      o.referralCode === code &&
+      (o.status === 'paid' || o.status === 'fulfilled' || o.status === 'shipped' || o.status === 'delivered'),
+    ).length;
   }
 
   // ---------- Dashboard ----------

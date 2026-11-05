@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getDoc, setDoc, increment } from 'firebase/firestore';
 import { getDb } from './firebase';
-import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest, Expense, Review } from './models';
+import { Order, OrderItem, OrderStatus, Product, SiteContent, StoreSettings, CustomerProfile, Discount, RestockRequest, Expense, Review, Referral } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ShopAdminService {
@@ -23,6 +23,7 @@ export class ShopAdminService {
   readonly siteContent = signal<SiteContent | null>(null);
   readonly settings = signal<StoreSettings | null>(null);
   readonly customers = signal<CustomerProfile[]>([]);
+  readonly referrals = signal<Referral[]>([]);
   readonly discounts = signal<Discount[]>([]);
   readonly restockRequests = signal<RestockRequest[]>([]);
   readonly expenses = signal<Expense[]>([]);
@@ -44,6 +45,7 @@ export class ShopAdminService {
   private unsubRestock?: Unsubscribe;
   private unsubExpenses?: Unsubscribe;
   private unsubReviews?: Unsubscribe;
+  private unsubReferrals?: Unsubscribe;
 
   /** Start live listeners (call once the admin is signed in). */
   start(): void {
@@ -60,6 +62,12 @@ export class ShopAdminService {
       collection(db, 'customers'),
       (snap) => this.customers.set(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<CustomerProfile, 'uid'>) }))),
       () => this.customers.set([]),
+    );
+
+    this.unsubReferrals = onSnapshot(
+      collection(db, 'referrals'),
+      (snap) => this.referrals.set(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Referral, 'id'>) }))),
+      () => this.referrals.set([]),
     );
 
     this.unsubDiscounts = onSnapshot(
@@ -143,6 +151,8 @@ export class ShopAdminService {
     this.siteContent.set(null);
     this.settings.set(null);
     this.customers.set([]);
+    this.referrals.set([]);
+    this.unsubReferrals = undefined;
     this.discounts.set([]);
     this.restockRequests.set([]);
     this.expenses.set([]);

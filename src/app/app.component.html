@@ -29,6 +29,9 @@
         <button class="nav-item" [class.active]="tab() === 'customers'" (click)="go('customers')">
           <app-icon name="user" [size]="18" /> Customers <span class="count">{{ shopSvc.customers().length }}</span>
         </button>
+        <button class="nav-item" [class.active]="tab() === 'referrals'" (click)="go('referrals')">
+          <app-icon name="star" [size]="18" /> Referrals <span class="count">{{ shopSvc.referrals().length }}</span>
+        </button>
         <button class="nav-item" [class.active]="tab() === 'discounts'" (click)="go('discounts')">
           <app-icon name="tag" [size]="18" /> Discounts <span class="count">{{ shopSvc.discounts().length }}</span>
         </button>
@@ -1104,6 +1107,52 @@
   }
 
   <!-- ============ DISCOUNTS (admin) ============ -->
+  @if (tab() === 'referrals') {
+    <section class="view">
+      <div class="toolbar">
+        <div>
+          <h2 class="block-title">Referrals</h2>
+          <p class="editor-hint">Customers get a code after their first paid order. 3 paid referrals = one free 30 ml, added automatically to their next order.</p>
+        </div>
+      </div>
+
+      @if (shopSvc.referrals().length === 0) {
+        <div class="empty">
+          <app-icon name="user" [size]="40" />
+          <h3>No referral codes yet</h3>
+          <p>They appear here as soon as a customer with a paid order opens their account page.</p>
+        </div>
+      } @else {
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Code</th><th>Customer</th><th>Progress</th>
+              <th>Gifts ready</th><th>Total referred</th><th>Orders with it</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of shopSvc.referrals(); track r.id) {
+              <tr>
+                <td><strong>{{ r.code }}</strong></td>
+                <td>
+                  {{ r.name || r.email || '—' }}
+                  <br /><span class="dim">{{ r.email }}</span>
+                </td>
+                <td>{{ r.count }} / 3</td>
+                <td>
+                  @if (r.rewards > 0) { <span class="stage-pill gift-pill">{{ r.rewards }} free 30 ml</span> }
+                  @else { <span class="dim">—</span> }
+                </td>
+                <td>{{ r.lifetime }}</td>
+                <td>{{ referralUses(r.code) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+
   @if (tab() === 'discounts') {
     <section class="view">
       @if (!authSvc.isAdmin) {

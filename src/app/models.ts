@@ -130,6 +130,19 @@ export interface Address {
   country: string;
 }
 
+export interface Referral {
+  id: string;
+  code: string;
+  uid: string;
+  email: string;
+  name?: string;
+  count: number;
+  rewards: number;
+  lifetime: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 export interface CustomerProfile {
   uid: string;
   name: string;
