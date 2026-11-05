@@ -256,7 +256,7 @@ export class AppComponent {
   async saveImages(): Promise<void> {
     this.imagesSaving.set(true);
     try {
-      await this.shopSvc.updateStoreSettings({
+      await this.shopSvc.savePlaceholderImages({
         placeholderMen: this.imageForm['men30'] || '',
         placeholderWomen: this.imageForm['women30'] || '',
         placeholderMen30: this.imageForm['men30'] || '',
@@ -266,6 +266,19 @@ export class AppComponent {
         placeholderWomen50: this.imageForm['women50'] || '',
         placeholderWomen100: this.imageForm['women100'] || '',
       });
+      // Keep the legacy settings copy in sync for older screens.
+      try {
+        await this.shopSvc.updateStoreSettings({
+          placeholderMen: this.imageForm['men30'] || '',
+          placeholderWomen: this.imageForm['women30'] || '',
+          placeholderMen30: this.imageForm['men30'] || '',
+          placeholderMen50: this.imageForm['men50'] || '',
+          placeholderMen100: this.imageForm['men100'] || '',
+          placeholderWomen30: this.imageForm['women30'] || '',
+          placeholderWomen50: this.imageForm['women50'] || '',
+          placeholderWomen100: this.imageForm['women100'] || '',
+        });
+      } catch { /* non-fatal */ }
       this.showToast('Placeholder images saved');
     } catch { this.showToast('Save failed - are you signed in?'); }
     finally { this.imagesSaving.set(false); }
@@ -392,6 +405,20 @@ export class AppComponent {
     this.pendingSyncCount.set(this.readQueue().length);
     window.addEventListener('online', () => this.flushPosQueue());
     effect(() => { if (this.authSvc.isAdmin && this.shopSvc.products().length) this.flushPosQueue(); });
+
+    // Show whatever is already saved in the Image Manager.
+    effect(() => {
+      const c = this.shopSvc.siteContent() as Record<string, unknown> | null;
+      if (!c) return;
+      const map: Record<string, string> = {
+        men30: 'placeholderMen30', men50: 'placeholderMen50', men100: 'placeholderMen100',
+        women30: 'placeholderWomen30', women50: 'placeholderWomen50', women100: 'placeholderWomen100',
+      };
+      for (const key of Object.keys(map)) {
+        const value = c[map[key]];
+        if (typeof value === 'string' && value && !this.imageForm[key]) this.imageForm[key] = value;
+      }
+    });
   }
 
   go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }

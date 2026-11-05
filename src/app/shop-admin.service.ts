@@ -224,6 +224,11 @@ export class ShopAdminService {
     await setDoc(doc(getDb(), 'siteContent', 'home'), { ...data, updatedAt: Date.now() });
   }
 
+  /** Merge only the Image Manager slots — the storefront reads these. */
+  async savePlaceholderImages(fields: Record<string, string>): Promise<void> {
+    await setDoc(doc(getDb(), 'siteContent', 'home'), { ...fields, updatedAt: Date.now() }, { merge: true });
+  }
+
   // ---- Store settings ----
   async saveStoreSettings(data: StoreSettings): Promise<void> {
     await setDoc(doc(getDb(), 'settings', 'store'), { ...data, updatedAt: Date.now() });
