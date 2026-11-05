@@ -438,6 +438,8 @@
                   <div class="order-pills">
                     <span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span>
                     @if (o.stage && o.stage !== 'placed') { <span class="stage-pill">{{ o.stage }}</span> }
+                    @if (o.referralRewardApplied) { <span class="stage-pill gift-pill">Free 30 ml gift</span> }
+                    @if (o.referralCode) { <span class="stage-pill">Ref {{ o.referralCode }}</span> }
                   </div>
                 </div>
                 <div class="order-customer">

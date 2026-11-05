@@ -111,6 +111,7 @@ export interface OrderItem {
   size?: string;
   price: number;
   qty: number;
+  isGift?: boolean;
 }
 
 export interface OrderCustomer {
@@ -196,6 +197,8 @@ export interface Order {
   courier?: string;
   trackingNumber?: string;
   trackingUrl?: string;
+  referralCode?: string;
+  referralRewardApplied?: boolean;
   stockReserved?: boolean;
   stockRestored?: boolean;
   discountCounted?: boolean;
