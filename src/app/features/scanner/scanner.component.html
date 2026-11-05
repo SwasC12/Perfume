@@ -21,7 +21,16 @@
             <button class="btn primary" (click)="start()">Start scanning</button>
           </div>
         }
-        <div class="scan-line"></div>
+        @if (scanning()) {
+          <div class="scan-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="scan-hud">
+            <span class="scan-chip"><span class="scan-dot"></span> QR · Barcode · Multi-symbology</span>
+            <button type="button" class="scan-torch" [class.on]="torchOn()" (click)="toggleTorch()" title="Torch">
+              <span class="torch-glyph">☀</span>
+            </button>
+          </div>
+        }
+        <div class="scan-line" [class.idle]="!scanning()"></div>
       </div>
       @if (error()) { <p class="form-error">{{ error() }}</p> }
       @if (lastCode()) { <p class="scan-last">Last scan: <strong>{{ lastCode() }}</strong></p> }

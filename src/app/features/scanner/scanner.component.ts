@@ -31,6 +31,7 @@ export class ScannerComponent implements OnDestroy {
   readonly generated = signal<string | null>(null);
   readonly genError = signal<string | null>(null);
 
+  readonly torchOn = signal(false);
   private stream: MediaStream | null = null;
   private raf = 0;
   private detector: any = null;
@@ -61,6 +62,19 @@ export class ScannerComponent implements OnDestroy {
       this.loop();
     } catch {
       this.error.set('Camera unavailable. Allow camera access and try again.');
+    }
+  }
+
+  /** Torch / flashlight where the camera exposes it (most Android + iPad Pro). */
+  async toggleTorch(): Promise<void> {
+    const track = this.stream?.getVideoTracks()[0];
+    if (!track) return;
+    const next = !this.torchOn();
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+      this.torchOn.set(next);
+    } catch {
+      this.error.set('This camera has no torch.');
     }
   }
 
