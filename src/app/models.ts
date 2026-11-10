@@ -70,6 +70,8 @@ export interface Product {
   category?: string;
   gender?: string;
   inspiredBy?: string;
+  /** Printed barcode (EAN/UPC/Code128) for scanning; QR labels use KF-PRODUCT:<id>. */
+  barcode?: string;
   notesTop?: string;
   notesHeart?: string;
   notesBase?: string;

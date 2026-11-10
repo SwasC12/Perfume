@@ -13,6 +13,8 @@ export type Cue =
   | 'orderCompleted'
   | 'orderDispatched'
   | 'lowStock'
+  | 'confirm'
+  | 'notify'
   | 'button';
 
 const FILES: Record<Cue, string> = {
@@ -23,6 +25,8 @@ const FILES: Record<Cue, string> = {
   orderCompleted: 'sounds/order_completed.wav',
   orderDispatched: 'sounds/order_dispatched.wav',
   lowStock: 'sounds/low_stock.wav',
+  confirm: 'sounds/ui_confirm.wav',
+  notify: 'sounds/notification_general.wav',
   button: 'sounds/button_tap.wav',
 };
 
@@ -34,7 +38,23 @@ const VIBRATION: Record<Cue, number | number[]> = {
   orderCompleted: [35, 50, 35],
   orderDispatched: 60,
   lowStock: 120,
+  confirm: 15,
+  notify: [30, 60, 30],
   button: 10,
+};
+
+export type BeepTone = 'classic' | 'high' | 'low' | 'chirp';
+export const BEEP_TONES: { key: BeepTone; label: string }[] = [
+  { key: 'classic', label: 'Classic' },
+  { key: 'high', label: 'High' },
+  { key: 'low', label: 'Low' },
+  { key: 'chirp', label: 'Chirp' },
+];
+const TONE_FILES: Record<BeepTone, string> = {
+  classic: 'sounds/scanner_success.wav',
+  high: 'sounds/scanner_success_high.wav',
+  low: 'sounds/scanner_success_low.wav',
+  chirp: 'sounds/scanner_success_chirp.wav',
 };
 
 const KEY = 'kf.sound.v1';
@@ -48,6 +68,12 @@ export interface SoundPrefs {
   vibrateNotifications: boolean;
   buttonSound: boolean;
   continuousScan: boolean;
+  /** Decode beep, like a handheld scanner's decode-tone setting. */
+  beepTone: BeepTone;
+  /** Use the phone volume keys as a scan trigger (APK only). */
+  volumeTrigger: boolean;
+  /** Volume key anywhere in the app scans into the focused text field. */
+  fieldTrigger: boolean;
 }
 
 function defaults(): SoundPrefs {
@@ -62,6 +88,8 @@ function defaults(): SoundPrefs {
       orderCompleted: true,
       orderDispatched: true,
       lowStock: true,
+      confirm: true,
+      notify: true,
       button: false,
     },
     vibration: true,
@@ -69,12 +97,15 @@ function defaults(): SoundPrefs {
     vibrateNotifications: true,
     buttonSound: false,
     continuousScan: true,
+    beepTone: 'classic',
+    volumeTrigger: true,
+    fieldTrigger: false,
   };
 }
 
 class SoundManagerImpl {
   private ctx: AudioContext | null = null;
-  private buffers = new Map<Cue, AudioBuffer>();
+  private buffers = new Map<string, AudioBuffer>();
   private loading: Promise<void> | null = null;
   private lastAt = new Map<Cue, number>();
   private prefs: SoundPrefs = defaults();
@@ -127,25 +158,27 @@ class SoundManagerImpl {
   }
 
   /** Decode every sound once, in the background. */
+  private fileFor(cue: Cue): string {
+    return cue === 'scanSuccess' ? TONE_FILES[this.prefs.beepTone] ?? FILES.scanSuccess : FILES[cue];
+  }
+
+  /** Decode every sound once, in the background. */
   async preload(): Promise<void> {
-    if (this.buffers.size >= Object.keys(FILES).length) return;
     if (this.loading) return this.loading;
     const ctx = this.context();
     if (!ctx) return;
+    const files = Array.from(new Set([...Object.values(FILES), ...Object.values(TONE_FILES)]));
     this.loading = (async () => {
-      await Promise.all(
-        (Object.keys(FILES) as Cue[]).map(async (cue) => {
-          if (this.buffers.has(cue)) return;
-          try {
-            const res = await fetch(FILES[cue]);
-            if (!res.ok) return;
-            const data = await res.arrayBuffer();
-            this.buffers.set(cue, await ctx.decodeAudioData(data.slice(0)));
-          } catch {
-            /* a missing file must never break the app */
-          }
-        }),
-      );
+      await Promise.all(files.map(async (file) => {
+        if (this.buffers.has(file)) return;
+        try {
+          const res = await fetch(file);
+          if (!res.ok) return;
+          this.buffers.set(file, await ctx.decodeAudioData((await res.arrayBuffer()).slice(0)));
+        } catch {
+          /* a missing file must never break the app */
+        }
+      }));
     })();
     return this.loading;
   }
@@ -178,8 +211,9 @@ class SoundManagerImpl {
     this.lastAt.set(cue, now);
 
     const ctx = this.context();
-    const buffer = this.buffers.get(cue);
+    const buffer = this.buffers.get(this.fileFor(cue));
     if (!ctx || !buffer) {
+      this.loading = null;
       void this.preload();
       return;
     }

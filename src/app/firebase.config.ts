@@ -21,6 +21,13 @@ export const firebaseConfig = {
   measurementId: 'G-E56W1XQP20',
 };
 
+/**
+ * UID of the shop admin. MUST match isAdmin() in firestore.rules (the rules are
+ * the real enforcement; this only stops storefront customer accounts, which
+ * live in the same Firebase project, from being treated as admin by the UI).
+ */
+export const ADMIN_UID = 'iQjj1HHAUAM6BzWGcoYWepQCpRx2';
+
 /** True once you've replaced the placeholders above with real values. */
 export function isFirebaseConfigured(): boolean {
   return !!firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PASTE');

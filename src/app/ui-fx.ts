@@ -1,3 +1,4 @@
+import { SoundManager } from './sound/sound-manager';
 // Tiny WebAudio cue system for the back office: no assets, no requests, instant.
 export type Cue = 'click' | 'success' | 'error' | 'notify';
 
@@ -43,24 +44,14 @@ function tone(freq: number, start: number, dur: number, gain = 0.05, type: Oscil
   osc.stop(t0 + dur + 0.02);
 }
 
+/**
+ * Toast / UI feedback. Routed through SoundManager so every sound in the app
+ * comes from the same scanner-style set (and the same volume + mute prefs).
+ */
 export function play(cue: Cue = 'click'): void {
   if (!soundEnabled()) return;
-  try {
-    if (cue === 'click') {
-      tone(520, 0, 0.055, 0.028, 'triangle');
-    } else if (cue === 'success') {
-      tone(659, 0, 0.1, 0.045);
-      tone(880, 0.085, 0.14, 0.04);
-    } else if (cue === 'error') {
-      tone(300, 0, 0.12, 0.045, 'sawtooth');
-      tone(190, 0.1, 0.18, 0.035, 'sawtooth');
-    } else {
-      tone(740, 0, 0.09, 0.04);
-      tone(988, 0.105, 0.12, 0.032);
-    }
-  } catch {
-    /* never let audio break a flow */
-  }
+  const map = { click: 'button', success: 'confirm', error: 'scanError', notify: 'notify' } as const;
+  SoundManager.play(map[cue]);
 }
 
 /** Pick a cue from a toast message, so existing calls get feedback for free. */

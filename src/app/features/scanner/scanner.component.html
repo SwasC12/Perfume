@@ -1,88 +1,256 @@
-<section class="scanner-view">
-  <div class="scanner-head">
-    <div>
-      <h1 class="page-title">Scan &amp; QR</h1>
+<div class="scn" [class.native]="native">
+  <!-- ================= Top bar ================= -->
+  <header class="scn-top">
+    <button type="button" class="scn-icon-btn" (click)="close()" aria-label="Close scanner">
+      <app-icon name="x" [size]="22" />
+    </button>
+    <div class="scn-title">
+      <strong>
+        @switch (purpose()) {
+          @case ('order') { Find order }
+          @case ('product') { Scan product }
+          @case ('field') { Scan to field }
+          @default { Scanner }
+        }
+      </strong>
+      <span class="scn-sub">
+        <span class="scn-led" [class.on]="state() === 'live'" [class.err]="state() === 'error'"></span>
+        @switch (state()) {
+          @case ('live') { {{ continuous() ? 'Continuous' : (armed() ? 'Ready' : 'Press trigger') }} · {{ engineLabel() }} }
+          @case ('starting') { Starting camera… }
+          @default { Camera off }
+        }
+      </span>
+    </div>
+    @if (purpose() === 'tab') {
+      <span class="scn-count" title="Good reads this session">{{ okCount() }}</span>
+    }
+    <button type="button" class="scn-icon-btn" [class.on]="!continuous()" (click)="toggleMode()"
+            [attr.aria-label]="continuous() ? 'Switch to trigger scanning' : 'Switch to continuous scanning'">
+      <span class="scn-mode">{{ continuous() ? '∞' : '1×' }}</span>
+    </button>
+    @if (torchAvailable()) {
+      <button type="button" class="scn-icon-btn" [class.on]="torchOn()" (click)="toggleTorch()" aria-label="Torch">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 2h6l-1 7h3l-7 13 1-9H8z" [attr.fill]="torchOn() ? 'currentColor' : 'none'" />
+        </svg>
+      </button>
+    }
+  </header>
+
+  @if (purpose() === 'tab') {
+    <nav class="scn-modes" aria-label="Scan mode">
+      @for (m of modes; track m.key) {
+        <button type="button" [class.on]="mode() === m.key" (click)="setMode(m.key)">{{ m.label }}</button>
+      }
+    </nav>
+  }
+
+  <!-- ================= Viewfinder ================= -->
+  <div class="scn-view" (click)="!continuous() ? trigger() : null">
+    @if (!native) { <video #video playsinline muted autoplay></video> }
+
+    <div class="scn-reticle" [class.ok]="flash() === 'ok'" [class.err]="flash() === 'err'" [class.dup]="flash() === 'dup'"
+         [class.idle]="state() !== 'live' || (!continuous() && !armed())">
+      <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+      <span class="laser"></span>
     </div>
 
+    @if (state() === 'starting') {
+      <div class="scn-msg"><span class="scn-spin"></span> Starting camera…</div>
+    } @else if (state() === 'error') {
+      <div class="scn-msg err">
+        <p>{{ error() }}</p>
+        <button type="button" class="scn-btn" (click)="start()">Retry</button>
+      </div>
+    } @else if (!continuous() && !armed()) {
+      <div class="scn-msg hint">Press a volume key or tap to scan</div>
+    } @else {
+      <div class="scn-hint">{{ purpose() === 'tab' ? modeHint() : 'Aim the red line across the code' }}</div>
+    }
+
+    @if (flash(); as f) { <div class="scn-flash" [class]="'scn-flash ' + f"></div> }
   </div>
 
-  <div class="scanner-grid">
-    <div class="panel scan-panel">
-      <div class="scan-frame">
-        <video #video playsinline muted></video>
-        <canvas #canvas hidden></canvas>
-        @if (!scanning()) {
-          <div class="scan-idle">
-            <span class="scan-icon">▦</span>
-            <p>{{ error() ? 'Camera unavailable' : 'Starting camera…' }}</p>
+  <!-- ================= Bottom sheet ================= -->
+  <section class="scn-sheet">
+    @if (result(); as r) {
+      <article class="scn-res" [class]="'scn-res ' + r.kind">
+        <div class="scn-res-icon">
+          @if (r.kind === 'ok') { <app-icon name="check" [size]="20" /> }
+          @else if (r.kind === 'dup') { <app-icon name="copy" [size]="18" /> }
+          @else { <app-icon name="x" [size]="20" /> }
+        </div>
+        <div class="scn-res-body">
+          <div class="scn-res-title">
+            <strong>{{ r.title }}</strong>
+            @if (r.order) { <span class="status-pill" [attr.data-status]="r.order.status">{{ r.order.status }}</span> }
+          </div>
+          <div class="scn-res-sub">{{ r.sub }}</div>
+          @if (r.order && mode() === 'lookup') {
+            <div class="scn-res-meta">{{ r.order.total | currency:'ZAR':'symbol-narrow':'1.0-2' }} · {{ r.order.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</div>
+          }
+        </div>
+        @if (r.order && purpose() === 'tab' && mode() === 'lookup') {
+          <div class="scn-res-actions">
+            @if (canShip(r.order)) { <button type="button" class="scn-btn primary" [disabled]="busy()" (click)="markShipped(r)">Ship</button> }
+            <button type="button" class="scn-btn" (click)="open(r)">Open</button>
           </div>
         }
-        @if (scanning()) {
-          <div class="scan-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-          <div class="scan-hud">
-            <span class="scan-chip"><span class="scan-dot"></span> Scanning</span>
-            <button type="button" class="scan-torch" [class.on]="torchOn()" (click)="toggleTorch()" title="Torch">
-              <span class="torch-glyph">☀</span>
+      </article>
+    } @else {
+      <div class="scn-res idle">
+        <div class="scn-res-icon"><app-icon name="qr" [size]="18" /></div>
+        <div class="scn-res-body">
+          <strong>Ready to scan</strong>
+          <div class="scn-res-sub">
+            @switch (purpose()) {
+              @case ('order') { Scan the QR on an order slip. }
+              @case ('product') { Scan a product barcode or KF label. }
+              @case ('field') { The code goes into the field you were typing in. }
+              @default { Volume keys work as a trigger. Bluetooth / wedge scanners work too. }
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Receive / Count session -->
+    @if (purpose() === 'tab' && (mode() === 'receive' || mode() === 'count')) {
+      <div class="scn-session">
+        <div class="scn-session-head">
+          <strong>{{ mode() === 'receive' ? 'Receiving' : 'Stock count' }}</strong>
+          <span>{{ lines().length }} item{{ lines().length === 1 ? '' : 's' }} · {{ lineUnits() }} unit{{ lineUnits() === 1 ? '' : 's' }}</span>
+        </div>
+        @if (lines().length) {
+          <ul class="scn-lines">
+            @for (l of lines(); track l.key) {
+              <li>
+                <div class="txt">
+                  <strong>{{ l.product.name }}</strong>
+                  @if (needsSize(l)) {
+                    <select class="scn-size" [ngModel]="''" (ngModelChange)="setLineSize(l, $event)" [name]="'sz' + l.key">
+                      <option value="" disabled>Pick size</option>
+                      @for (s of sizeChoices(l.product); track s.key) { <option [value]="s.key">{{ s.label }}</option> }
+                    </select>
+                  } @else {
+                    <small>{{ l.sizeKey ? sizeLabels[l.sizeKey] + ' · ' : '' }}{{ mode() === 'receive' ? 'now ' + (stockOf(l.product, l.sizeKey) ?? 0) + ' → ' + ((stockOf(l.product, l.sizeKey) ?? 0) + l.qty) : 'system ' + (stockOf(l.product, l.sizeKey) ?? '—') + (stockOf(l.product, l.sizeKey) != null && stockOf(l.product, l.sizeKey) !== l.qty ? ' · diff ' + (l.qty - (stockOf(l.product, l.sizeKey) ?? 0)) : '') }}</small>
+                  }
+                </div>
+                <div class="scn-step">
+                  <button type="button" (click)="setLineQty(l, l.qty - 1)" aria-label="Less">−</button>
+                  <span>{{ l.qty }}</span>
+                  <button type="button" (click)="setLineQty(l, l.qty + 1)" aria-label="More">+</button>
+                </div>
+              </li>
+            }
+          </ul>
+          <div class="scn-row">
+            <button type="button" class="scn-btn" (click)="clearLines()">Discard</button>
+            <button type="button" class="scn-btn primary grow" [disabled]="busy()" (click)="applyStock()">
+              {{ busy() ? 'Saving…' : mode() === 'receive' ? 'Add ' + lineUnits() + ' to stock' : 'Save count' }}
             </button>
           </div>
+        } @else {
+          <p class="scn-empty">{{ mode() === 'receive' ? 'Scan products as they come in. Each scan is +1.' : 'Scan every unit on the shelf, then save to overwrite stock.' }}</p>
         }
-        <div class="scan-line" [class.idle]="!scanning()"></div>
       </div>
-      @if (error()) { <p class="form-error">{{ error() }}</p> }
-      @if (notice()) { <p class="scan-notice">{{ notice() }}</p> }
+    }
 
-      @if (order(); as o) {
-        <div class="scan-result">
-          <div class="result-head"><strong>{{ o.reference }}</strong><span class="status-pill" [attr.data-status]="o.status">{{ o.status }}</span></div>
-          <p>{{ o.customer.name }} · {{ o.customer.email }}@if (o.customer.phone) { · {{ o.customer.phone }} }</p>
-          <p class="dim">{{ o.items.length }} item(s) · {{ o.total | currency:'ZAR':'symbol-narrow':'1.0-2' }}</p>
-          @if (o.status === 'paid' || o.status === 'fulfilled') {
-            <button class="btn primary" (click)="markShipped()">Mark shipped</button>
+    <!-- Pack verification -->
+    @if (purpose() === 'tab' && mode() === 'pack') {
+      <div class="scn-session">
+        @if (packOrder(); as o) {
+          <div class="scn-session-head">
+            <strong>{{ o.reference }} · {{ o.customer.name }}</strong>
+            <span>{{ packProgress().got }}/{{ packProgress().need }}</span>
+          </div>
+          <div class="scn-progress"><i [style.width.%]="packProgress().pct" [class.done]="packDone()"></i></div>
+          <ul class="scn-lines pack">
+            @for (l of pack(); track $index) {
+              <li [class.done]="l.got >= l.need">
+                <span class="tick">@if (l.got >= l.need) { <app-icon name="check" [size]="14" /> }</span>
+                <div class="txt"><strong>{{ l.name }}</strong><small>{{ l.size || '' }}</small></div>
+                <span class="qty">{{ l.got }}/{{ l.need }}</span>
+              </li>
+            }
+          </ul>
+          <div class="scn-row">
+            <button type="button" class="scn-btn" (click)="resetPack()">Cancel</button>
+            <button type="button" class="scn-btn primary grow" [disabled]="!packDone() || busy()" (click)="markPacked()">
+              {{ packDone() ? 'Mark packaged' : 'Scan remaining items' }}
+            </button>
+          </div>
+        } @else {
+          <p class="scn-empty">Scan the QR on the packing slip to start checking the box.</p>
+        }
+      </div>
+    }
+
+    <form class="scn-entry" (submit)="$event.preventDefault(); submitManual()">
+      <input type="text" name="manual" [(ngModel)]="manual" autocomplete="off" autocapitalize="characters"
+             enterkeyhint="go" placeholder="Type a code, e.g. KF-ABCDE" />
+      <button type="submit" class="scn-btn">Enter</button>
+    </form>
+
+    @if (!continuous()) {
+      <button type="button" class="scn-trigger" [class.armed]="armed()" (click)="trigger()">
+        {{ armed() ? 'Scanning…' : 'Scan' }}
+      </button>
+    }
+
+    @if (purpose() === 'tab') {
+      <div class="scn-tools">
+        <button type="button" class="scn-link" (click)="historyOpen.set(!historyOpen())" [disabled]="!history().length">
+          History ({{ history().length }}) <span class="chev" [class.open]="historyOpen()">›</span>
+        </button>
+        <button type="button" class="scn-link" (click)="genOpen.set(true)">Make QR</button>
+        @if (history().length) {
+          <button type="button" class="scn-link" (click)="exportCsv()">CSV</button>
+          <button type="button" class="scn-link" (click)="clearHistory()">Clear</button>
+        }
+      </div>
+
+      @if (historyOpen() && history().length) {
+        <ul class="scn-history">
+          @for (h of history(); track h.at + h.code) {
+            <li [class]="h.kind" (click)="h.order ? open(h) : null">
+              <span class="dot"></span>
+              <span class="txt"><strong>{{ h.title }}</strong><small>{{ h.sub }}</small></span>
+              <time>{{ h.at | date:'HH:mm:ss' }}</time>
+            </li>
+          }
+        </ul>
+      }
+    }
+  </section>
+
+  <!-- ================= QR generator sheet ================= -->
+  @if (genOpen()) {
+    <div class="scn-gen-backdrop" (click)="genOpen.set(false)">
+      <div class="scn-gen" (click)="$event.stopPropagation()">
+        <div class="scn-gen-head">
+          <strong>Make a QR code</strong>
+          <button type="button" class="scn-icon-btn dark" (click)="genOpen.set(false)" aria-label="Close"><app-icon name="x" [size]="18" /></button>
+        </div>
+        <div class="scn-seg">
+          @for (t of ['order', 'product', 'batch', 'custom']; track t) {
+            <button type="button" [class.on]="genType === t" (click)="genType = $any(t); generated.set(null)">{{ t }}</button>
           }
         </div>
-      }
-      @if (product(); as p) {
-        <div class="scan-result">
-          <strong>{{ p.name }}</strong>
-          <p class="dim">{{ p.category || '' }}@if (p.gender) { · {{ p.gender }} }</p>
-        </div>
-      }
-      @if (batchCode()) {
-        <div class="scan-result"><strong>Batch {{ batchCode() }}</strong><p class="dim">Scanned batch code</p></div>
-      }
-
-      @if (scanned().length) {
-        <div class="scan-list">
-          <div class="scan-list-head"><strong>Scanned</strong><button class="mini-btn" (click)="clear()">Clear</button></div>
-          @for (row of scanned(); track row.at + row.code) {
-            <div class="scan-row"><span>{{ row.label }}</span><span class="dim">{{ row.at | date:'HH:mm:ss' }}</span></div>
-          }
-        </div>
-      }
+        <form class="scn-entry light" (submit)="$event.preventDefault(); generate()">
+          <input type="text" name="genValue" [(ngModel)]="genValue" autocomplete="off"
+                 [placeholder]="genType === 'order' ? 'KF-ABCDE' : genType === 'product' ? 'Product ID (add :size50 for a size)' : genType === 'batch' ? 'Batch code' : 'Any text'" />
+          <button type="submit" class="scn-btn primary">Create</button>
+        </form>
+        @if (genError()) { <p class="scn-gen-err">{{ genError() }}</p> }
+        @if (generated()) {
+          <div class="scn-gen-out">
+            <img [src]="generated()!" alt="Generated QR code" />
+            <a class="scn-btn primary" [href]="generated()!" [download]="'kaua-qr-' + (genValue || 'code') + '.png'">Download PNG</a>
+          </div>
+        }
+      </div>
     </div>
-
-    <div class="panel gen-panel">
-      <h2>QR generator</h2>
-      <p class="editor-hint">Generate a QR for an order reference, a batch, a product ID, or custom text.</p>
-      <label>Type
-        <select [(ngModel)]="genType" name="genType" class="form-select">
-          <option value="order">Order</option>
-          <option value="batch">Batch</option>
-          <option value="product">Product</option>
-          <option value="custom">Custom text</option>
-        </select>
-      </label>
-      <label>Value
-        <input type="text" [(ngModel)]="genValue" name="genValue" placeholder="KF-XXXXX / batch code / product ID" />
-      </label>
-      <button class="btn primary" (click)="generate()">Generate QR</button>
-      @if (genError()) { <p class="form-error">{{ genError() }}</p> }
-      @if (generated()) {
-        <div class="qr-preview">
-          <img [src]="generated()!" alt="Generated QR code" />
-          <a class="btn" [href]="generated()!" [download]="'kaua-qr.png'">Download</a>
-        </div>
-      }
-    </div>
-  </div>
-</section>
+  }
+</div>

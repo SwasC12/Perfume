@@ -1,8 +1,53 @@
 // Password gate for the back office. Everything sits behind a signed,
 // HttpOnly session cookie; without it the app never reaches the browser.
-const COOKIE = 'kf_admin';
+//
+// Required Worker secrets (wrangler secret put ...):
+//   ADMIN_PASS            the access password
+//   ADMIN_SESSION_SECRET  long random string (>= 32 chars) used to sign sessions
+// If either is missing the gate fails closed (nobody gets in).
+const COOKIE = '__Host-kf_admin';
+const LEGACY_COOKIE = 'kf_admin'; // pre-v2 name, cleared on logout
+const TOKEN_VERSION = 'v2';
 const SESSION_DAYS = 30;
 const enc = new TextEncoder();
+
+// Applied to every response (gate page and app assets).
+// script-src: the only inline script is Angular's critical-CSS loader
+// (onload="this.media='all'"), allowed by hash. apis.google.com / firebaseapp.com
+// are what Firebase Auth may load. 'wasm-unsafe-eval' is for the zxing scanner.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval' 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc=' https://apis.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' data: blob:",
+  "connect-src 'self' https: wss: data: blob:",
+  "worker-src 'self' blob:",
+  "frame-src 'self' blob: https://*.firebaseapp.com https://apis.google.com",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': CSP,
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
+  'X-Robots-Tag': 'noindex, nofollow, noarchive',
+};
+
+function secured(response) {
+  const res = new Response(response.body, response);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v);
+  return res;
+}
 
 async function hmac(secret, data) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -17,18 +62,41 @@ function timingSafe(a, b) {
   return diff === 0;
 }
 
+function configured(env) {
+  return !!String(env.ADMIN_PASS || '').trim() && !!String(env.ADMIN_SESSION_SECRET || '');
+}
+
+// The signature also covers the current password, so changing ADMIN_PASS
+// (or ADMIN_SESSION_SECRET) revokes every existing session.
+async function signPayload(env, exp) {
+  const expected = String(env.ADMIN_PASS || '').trim();
+  const passTag = await hmac(env.ADMIN_SESSION_SECRET, 'pass|' + expected);
+  return hmac(env.ADMIN_SESSION_SECRET, TOKEN_VERSION + '|' + exp + '|' + passTag);
+}
+
 async function issueToken(env) {
-  const exp = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  return exp + '.' + (await hmac(env.ADMIN_SESSION_SECRET, String(exp)));
+  const exp = String(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  return exp + '.' + (await signPayload(env, exp));
 }
 
 async function tokenValid(env, raw) {
-  if (!raw) return false;
+  if (!raw || !configured(env)) return false;
   const parts = String(raw).split('.');
   if (parts.length !== 2) return false;
   const [exp, sig] = parts;
-  if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return false;
-  return timingSafe(sig, await hmac(env.ADMIN_SESSION_SECRET, exp));
+  if (!/^\d{1,15}$/.test(exp) || Number(exp) < Date.now()) return false;
+  return timingSafe(sig, await signPayload(env, exp));
+}
+
+// Compare MACs of both values so neither content nor length leaks via timing.
+async function passwordMatches(env, password) {
+  const expected = String(env.ADMIN_PASS || '').trim();
+  if (!expected) return false;
+  const [a, b] = await Promise.all([
+    hmac(env.ADMIN_SESSION_SECRET, 'pw|' + String(password).trim()),
+    hmac(env.ADMIN_SESSION_SECRET, 'pw|' + expected),
+  ]);
+  return timingSafe(a, b);
 }
 
 function cookieFrom(request) {
@@ -40,6 +108,8 @@ function cookieFrom(request) {
   return '';
 }
 
+// Best-effort only: this map is per isolate. Add a Cloudflare WAF rate-limiting
+// rule on POST /__login for a real limit.
 const attempts = new Map();
 function tooMany(ip) {
   const now = Date.now();
@@ -52,6 +122,9 @@ function tooMany(ip) {
 }
 
 function page(error) {
+  const msg = error === 'slow' ? 'Too many attempts. Wait a few minutes and try again.'
+    : error === 'config' ? 'The gate is not configured.'
+    : error ? 'Wrong password. Try again.' : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
@@ -78,52 +151,60 @@ function page(error) {
   <p>Private. Enter the access password to continue.</p>
   <input type="password" name="password" autocomplete="current-password" autofocus required />
   <button type="submit">Unlock</button>
-  ${error ? '<p class="err">Wrong password. Try again.</p>' : ''}
+  ${msg ? '<p class="err">' + msg + '</p>' : ''}
 </form></body></html>`;
+}
+
+function htmlResponse(body, status) {
+  return new Response(body, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+async function handle(request, env) {
+  const url = new URL(request.url);
+
+  if (url.pathname === '/__logout') {
+    const headers = new Headers({ Location: '/', 'Cache-Control': 'no-store' });
+    headers.append('Set-Cookie', COOKIE + '=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+    headers.append('Set-Cookie', LEGACY_COOKIE + '=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+    return new Response(null, { status: 302, headers });
+  }
+
+  if (!configured(env)) return htmlResponse(page('config'), 503);
+
+  if (url.pathname === '/__login' && request.method === 'POST') {
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    if (tooMany(ip)) return htmlResponse(page('slow'), 429);
+    let password = '';
+    try {
+      const form = await request.formData();
+      password = String(form.get('password') || '').slice(0, 512);
+    } catch { /* ignore */ }
+    // Trimmed on both sides: piping a secret through PowerShell/wrangler can add
+    // a trailing newline, which must not lock the owner out.
+    if (!(await passwordMatches(env, password))) return htmlResponse(page('bad'), 401);
+    const token = await issueToken(env);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: '/',
+        'Cache-Control': 'no-store',
+        'Set-Cookie': COOKIE + '=' + token + '; Path=/; Max-Age=' + SESSION_DAYS * 24 * 3600 + '; HttpOnly; Secure; SameSite=Lax',
+      },
+    });
+  }
+
+  if (await tokenValid(env, cookieFrom(request))) {
+    return env.ASSETS.fetch(request);
+  }
+
+  return htmlResponse(page(null), 401);
 }
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-
-    if (url.pathname === '/__logout') {
-      return new Response(null, {
-        status: 302,
-        headers: { Location: '/', 'Set-Cookie': COOKIE + '=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax' },
-      });
-    }
-
-    if (url.pathname === '/__login' && request.method === 'POST') {
-      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-      if (tooMany(ip)) return new Response(page('slow'), { status: 429, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-      let password = '';
-      try {
-        const form = await request.formData();
-        password = String(form.get('password') || '');
-      } catch { /* ignore */ }
-      // Trim both sides: piping a secret through PowerShell/wrangler can add a
-      // trailing newline, which must not lock the owner out.
-      const expected = String(env.ADMIN_PASS || '').trim();
-      if (!expected || !timingSafe(String(password).trim(), expected)) {
-        return new Response(page('bad'), { status: 401, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
-      }
-      const token = await issueToken(env);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: '/',
-          'Set-Cookie': COOKIE + '=' + token + '; Path=/; Max-Age=' + SESSION_DAYS * 24 * 3600 + '; HttpOnly; Secure; SameSite=Lax',
-        },
-      });
-    }
-
-    if (await tokenValid(env, cookieFrom(request))) {
-      return env.ASSETS.fetch(request);
-    }
-
-    return new Response(page(null), {
-      status: 401,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' },
-    });
+    return secured(await handle(request, env));
   },
 };

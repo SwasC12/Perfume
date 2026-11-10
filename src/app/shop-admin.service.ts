@@ -139,6 +139,7 @@ export class ShopAdminService {
     this.unsubRestock?.();
     this.unsubExpenses?.();
     this.unsubReviews?.();
+    this.unsubReferrals?.();
     this.unsubProducts = undefined;
     this.unsubOrders = undefined;
     this.unsubContent = undefined;
@@ -342,7 +343,16 @@ export class ShopAdminService {
     discountCode?: string; discountAmount?: number;
   }): Promise<string> {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const reference = 'KF-' + Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    // Crypto RNG (32 chars divides 256 evenly, so it's uniform). Retry on a
+    // collision so a POS sale never overwrites another order's public status.
+    const pick = () => 'KF-' + Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => chars[b % chars.length]).join('');
+    let reference = pick();
+    for (let i = 0; i < 5; i++) {
+      try {
+        if (!(await getDoc(doc(getDb(), 'orderStatus', reference))).exists()) break;
+      } catch { break; }
+      reference = pick();
+    }
     const now = Date.now();
     await addDoc(collection(getDb(), 'orders'), {
       reference, uid: null, channel: 'pos', paymentMethod: data.paymentMethod,

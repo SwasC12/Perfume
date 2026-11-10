@@ -12,7 +12,7 @@ async function resolveCategoryId() {
   try {
     // NOTE: the Store API ignores ?slug=, so it returns ALL categories — we must
     // filter by slug ourselves rather than trusting the first entry.
-    const r = await fetch(`${BASE}/products/categories?per_page=100`);
+    const r = await fetch(`${BASE}/products/categories?per_page=100`, { signal: AbortSignal.timeout(8000) });
     if (r.ok) {
       const cats = await r.json();
       const match = Array.isArray(cats)
@@ -53,6 +53,11 @@ function normalize(p) {
 }
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
@@ -64,7 +69,7 @@ export default async function handler(req, res) {
 
     do {
       const url = `${BASE}/products?category=${categoryId}&per_page=${PER_PAGE}&page=${page}`;
-      const r = await fetch(url);
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) break;
       const tp = parseInt(r.headers.get('x-wp-totalpages') || '1', 10);
       totalPages = Number.isFinite(tp) && tp > 0 ? tp : 1;
@@ -82,6 +87,8 @@ export default async function handler(req, res) {
       fetchedAt: Date.now(),
     });
   } catch (e) {
-    res.status(502).json({ error: 'Failed to fetch Rumi stock', detail: String(e) });
+    console.error('rumi-stock', e);
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(502).json({ error: 'Failed to fetch Rumi stock' });
   }
 }

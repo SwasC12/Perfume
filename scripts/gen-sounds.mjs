@@ -1,49 +1,68 @@
+/**
+ * Generates every UI sound as a small 16-bit WAV.
+ *
+ * Style: enterprise handheld scanner. Short, bright piezo-like beeps that cut
+ * through warehouse noise, a single clean "good read", a low buzz for errors.
+ * All tones are synthesised here from scratch (no sampled audio).
+ *
+ *   node scripts/gen-sounds.mjs
+ *
+ * Writes to public/sounds (web + APK assets) and android res/raw (native
+ * notification sounds).
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const RATE = 44100;
-const dirs = ['android/app/src/main/res/raw', 'src/assets/sounds'];
+const dirs = ['public/sounds', 'android/app/src/main/res/raw'];
 for (const d of dirs) fs.mkdirSync(path.resolve(d), { recursive: true });
 
-function env(t, dur, attack = 0.004, release = 0.06) {
-  if (t < attack) return t / attack;
-  const left = dur - t;
-  if (left < release) return Math.max(0, left / release);
-  return 1;
-}
+/** Band-limited waveforms: additive harmonics, so no aliasing fizz. */
+const WAVES = {
+  // piezo beeper: odd harmonics, rolled off faster than a true square
+  piezo: [[1, 1], [3, 0.28], [5, 0.11], [7, 0.05]],
+  // softer, rounder chime
+  bell: [[1, 1], [2, 0.18], [3, 0.06]],
+  // buzzy error tone
+  buzz: [[1, 1], [2, 0.35], [3, 0.3], [4, 0.15], [5, 0.12]],
+  sine: [[1, 1]],
+};
 
-/** One tone with harmonics + optional pitch sweep. */
-function tone(buf, start, dur, f0, f1, gain = 0.5, type = 'square') {
-  const a = Math.floor(start * RATE);
+/**
+ * Add one tone into buf.
+ * attack/release in seconds; decay>0 gives an exponential bell-like tail.
+ */
+function tone(buf, { at, dur, f, f1 = f, gain = 0.5, wave = 'piezo', attack = 0.002, release = 0.012, decay = 0 }) {
+  const a = Math.floor(at * RATE);
   const n = Math.floor(dur * RATE);
+  const partials = WAVES[wave];
+  let phase = 0;
   for (let i = 0; i < n; i++) {
     const t = i / RATE;
-    const p = i / n;
-    const f = f0 + (f1 - f0) * p;
-    const phase = 2 * Math.PI * f * t;
-    let s;
-    if (type === 'square') s = Math.sign(Math.sin(phase)) * 0.65 + Math.sin(phase) * 0.35;
-    else if (type === 'tri') s = (2 / Math.PI) * Math.asin(Math.sin(phase));
-    else s = Math.sin(phase);
-    // second harmonic adds the "scanner" edge
-    s += 0.18 * Math.sin(2 * phase);
-    const i2 = a + i;
-    if (i2 < buf.length) buf[i2] += s * gain * env(t, dur);
+    const freq = f + (f1 - f) * (i / n);
+    phase += (2 * Math.PI * freq) / RATE;
+    let s = 0;
+    for (const [h, amp] of partials) if (freq * h < RATE / 2.2) s += Math.sin(phase * h) * amp;
+    let e = 1;
+    if (t < attack) e = t / attack;
+    else if (dur - t < release) e = Math.max(0, (dur - t) / release);
+    if (decay > 0) e *= Math.exp(-t / decay);
+    const j = a + i;
+    if (j < buf.length) buf[j] += s * gain * e;
   }
 }
 
-function render(durSec, fn) {
-  const buf = new Float32Array(Math.floor(durSec * RATE));
-  fn(buf);
-  // soft clip + normalise to -1..1 headroom
-  let peak = 0;
-  for (const v of buf) peak = Math.max(peak, Math.abs(v));
-  const k = peak > 0 ? 0.82 / peak : 1;
-  for (let i = 0; i < buf.length; i++) buf[i] *= k;
+function render(durSec, tones, peak = 0.89) {
+  const buf = new Float32Array(Math.ceil(durSec * RATE));
+  for (const t of tones) tone(buf, t);
+  let max = 0;
+  for (const v of buf) max = Math.max(max, Math.abs(v));
+  const k = max > 0 ? peak / max : 1;
+  for (let i = 0; i < buf.length; i++) buf[i] = Math.tanh(buf[i] * k * 1.1) / Math.tanh(1.1);
   return buf;
 }
 
-function wav(buf, file) {
+function wav(file, buf) {
   const bytes = Buffer.alloc(44 + buf.length * 2);
   bytes.write('RIFF', 0); bytes.writeUInt32LE(36 + buf.length * 2, 4); bytes.write('WAVE', 8);
   bytes.write('fmt ', 12); bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20);
@@ -51,79 +70,102 @@ function wav(buf, file) {
   bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34);
   bytes.write('data', 36); bytes.writeUInt32LE(buf.length * 2, 40);
   for (let i = 0; i < buf.length; i++) {
-    const s = Math.max(-1, Math.min(1, buf[i]));
-    bytes.writeInt16LE(Math.round(s * 32767), 44 + i * 2);
+    bytes.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[i])) * 32767), 44 + i * 2);
   }
   for (const d of dirs) fs.writeFileSync(path.resolve(d, file), bytes);
-  console.log('wrote', file, (bytes.length / 1024).toFixed(1) + ' KB');
+  console.log('wrote', file.padEnd(28), (bytes.length / 1024).toFixed(1).padStart(5), 'KB', Math.round(buf.length / RATE * 1000) + ' ms');
 }
 
-// A. SUCCESS — crisp double beep, 2 tones, ~130 ms
-wav(render(0.16, (b) => {
-  tone(b, 0.000, 0.055, 2350, 2350, 0.6, 'square');
-  tone(b, 0.070, 0.050, 2900, 2900, 0.5, 'square');
-}), 'scanner_success.wav');
+// ---------------------------------------------------------------- scanner
 
-// B. ERROR — descending two-tone, ~250 ms
-wav(render(0.30, (b) => {
-  tone(b, 0.000, 0.11, 520, 460, 0.55, 'tri');
-  tone(b, 0.130, 0.13, 330, 250, 0.5, 'tri');
-}), 'scanner_error.wav');
+// GOOD READ: the classic rugged-handheld decode beep. One very short,
+// loud, square-ish piezo tone with an instant attack and no tail.
+const decode = (f, dur = 0.07) => render(dur + 0.01, [{ at: 0, dur, f, gain: 0.8, wave: 'piezo', attack: 0.001, release: 0.006 }], 0.95);
+wav('scanner_success.wav', decode(2730));          // default ('classic')
+wav('scanner_success_high.wav', decode(3500, 0.06));
+wav('scanner_success_low.wav', decode(1950, 0.08));
+wav('scanner_success_chirp.wav', render(0.1, [
+  { at: 0, dur: 0.04, f: 2300, gain: 0.75, wave: 'piezo', attack: 0.001, release: 0.004 },
+  { at: 0.045, dur: 0.05, f: 3070, gain: 0.75, wave: 'piezo', attack: 0.001, release: 0.006 },
+], 0.95));
 
-// C. DUPLICATE — single soft low blip, ~110 ms
-wav(render(0.14, (b) => {
-  tone(b, 0.000, 0.085, 640, 600, 0.35, 'tri');
-}), 'scanner_duplicate.wav');
+// ERROR / NO MATCH: long low buzz, then a short one. The 'reject' sound.
+wav('scanner_error.wav', render(0.42, [
+  { at: 0.0, dur: 0.2, f: 410, gain: 0.7, wave: 'buzz', attack: 0.002 },
+  { at: 0.26, dur: 0.14, f: 410, gain: 0.7, wave: 'buzz', attack: 0.002 },
+], 0.95));
 
-// D. STOCK RECEIVED — three ascending, ~520 ms
-wav(render(0.60, (b) => {
-  tone(b, 0.000, 0.14, 660, 660, 0.4, 'sine');
-  tone(b, 0.150, 0.14, 880, 880, 0.42, 'sine');
-  tone(b, 0.300, 0.22, 1170, 1170, 0.45, 'sine');
-}), 'stock_received.wav');
+// DUPLICATE: two quick decode-pitch blips, quieter.
+wav('scanner_duplicate.wav', render(0.18, [
+  { at: 0.0, dur: 0.045, f: 2730, gain: 0.55, attack: 0.001, release: 0.005 },
+  { at: 0.09, dur: 0.045, f: 2730, gain: 0.55, attack: 0.001, release: 0.005 },
+], 0.7));
 
-// E. ORDER COMPLETED — richer triad, ~600 ms
-wav(render(0.68, (b) => {
-  tone(b, 0.000, 0.16, 784, 790, 0.4, 'sine');
-  tone(b, 0.170, 0.16, 988, 995, 0.4, 'sine');
-  tone(b, 0.340, 0.26, 1319, 1325, 0.42, 'sine');
-}), 'order_completed.wav');
+// -------------------------------------------------------------- workflow
 
-// F. ORDER DISPATCHED — two quick confirm tones, ~240 ms
-wav(render(0.28, (b) => {
-  tone(b, 0.000, 0.09, 900, 980, 0.45, 'square');
-  tone(b, 0.110, 0.10, 1240, 1300, 0.42, 'square');
-}), 'order_dispatched.wav');
+// STOCK RECEIVED: rising three-step confirm.
+wav('stock_received.wav', render(0.34, [
+  { at: 0.0, dur: 0.07, f: 1568, gain: 0.5 },
+  { at: 0.09, dur: 0.07, f: 2093, gain: 0.5 },
+  { at: 0.18, dur: 0.14, f: 2637, gain: 0.5, decay: 0.12 },
+]));
 
-// G. LOW STOCK — gentle descending warning, ~300 ms
-wav(render(0.34, (b) => {
-  tone(b, 0.000, 0.12, 620, 600, 0.35, 'sine');
-  tone(b, 0.140, 0.14, 500, 480, 0.35, 'sine');
-}), 'low_stock.wav');
+// ORDER COMPLETED: bright major arpeggio with a ringing tail.
+wav('order_completed.wav', render(0.6, [
+  { at: 0.0, dur: 0.12, f: 1319, gain: 0.45, wave: 'bell', decay: 0.1 },
+  { at: 0.1, dur: 0.12, f: 1661, gain: 0.45, wave: 'bell', decay: 0.1 },
+  { at: 0.2, dur: 0.38, f: 1976, gain: 0.5, wave: 'bell', decay: 0.18 },
+]));
 
-// H. BUTTON — very short tick, ~40 ms
-wav(render(0.05, (b) => {
-  tone(b, 0.000, 0.028, 1400, 1200, 0.18, 'square');
-}), 'button_tap.wav');
+// ORDER DISPATCHED: quick up-chirp pair, "sent".
+wav('order_dispatched.wav', render(0.24, [
+  { at: 0.0, dur: 0.07, f: 1800, f1: 2300, gain: 0.5 },
+  { at: 0.1, dur: 0.11, f: 2300, f1: 2900, gain: 0.5, decay: 0.09 },
+]));
 
-// Notifications
-wav(render(0.45, (b) => {
-  tone(b, 0.000, 0.12, 880, 880, 0.35, 'sine');
-  tone(b, 0.130, 0.18, 1100, 1100, 0.33, 'sine');
-}), 'notification_general.wav');
+// LOW STOCK: two descending mid tones, attention without alarm.
+wav('low_stock.wav', render(0.34, [
+  { at: 0.0, dur: 0.12, f: 1175, gain: 0.5, wave: 'bell', decay: 0.1 },
+  { at: 0.15, dur: 0.17, f: 880, gain: 0.5, wave: 'bell', decay: 0.12 },
+]));
 
-wav(render(0.50, (b) => {
-  tone(b, 0.000, 0.14, 600, 560, 0.4, 'tri');
-  tone(b, 0.150, 0.18, 450, 420, 0.4, 'tri');
-}), 'notification_inventory.wav');
+// BUTTON: a tiny keypad click.
+wav('button_tap.wav', render(0.03, [
+  { at: 0, dur: 0.018, f: 3200, gain: 0.35, attack: 0.0005, release: 0.008, decay: 0.006 },
+], 0.5));
 
-wav(render(0.50, (b) => {
-  tone(b, 0.000, 0.13, 880, 900, 0.35, 'sine');
-  tone(b, 0.140, 0.18, 1320, 1320, 0.35, 'sine');
-}), 'notification_order.wav');
+// ---------------------------------------------------------- notifications
 
-wav(render(0.62, (b) => {
-  tone(b, 0.000, 0.14, 520, 520, 0.5, 'square');
-  tone(b, 0.160, 0.14, 390, 390, 0.5, 'square');
-  tone(b, 0.320, 0.18, 520, 520, 0.5, 'square');
-}), 'notification_important.wav');
+// General: soft two-note chime.
+wav('notification_general.wav', render(0.5, [
+  { at: 0.0, dur: 0.18, f: 1568, gain: 0.45, wave: 'bell', decay: 0.14 },
+  { at: 0.14, dur: 0.34, f: 2093, gain: 0.45, wave: 'bell', decay: 0.2 },
+]));
+
+// New order: three rising notes, the "cha-ching" of the back office.
+wav('notification_order.wav', render(0.62, [
+  { at: 0.0, dur: 0.12, f: 1319, gain: 0.45, wave: 'bell', decay: 0.1 },
+  { at: 0.11, dur: 0.12, f: 1760, gain: 0.45, wave: 'bell', decay: 0.1 },
+  { at: 0.22, dur: 0.4, f: 2637, gain: 0.5, wave: 'bell', decay: 0.2 },
+]));
+
+// Inventory: two low-mid steps down.
+wav('notification_inventory.wav', render(0.5, [
+  { at: 0.0, dur: 0.16, f: 1175, gain: 0.5, wave: 'bell', decay: 0.12 },
+  { at: 0.17, dur: 0.3, f: 784, gain: 0.5, wave: 'bell', decay: 0.18 },
+]));
+
+// Important: insistent triple beep, repeated pitch.
+wav('notification_important.wav', render(0.56, [
+  { at: 0.0, dur: 0.1, f: 2200, gain: 0.55 },
+  { at: 0.16, dur: 0.1, f: 2200, gain: 0.55 },
+  { at: 0.32, dur: 0.2, f: 2200, gain: 0.55, decay: 0.15 },
+]));
+
+// ------------------------------------------------------------- general UI
+
+// CONFIRM (saved / updated): short two-step up, quieter than a scan.
+wav('ui_confirm.wav', render(0.16, [
+  { at: 0.0, dur: 0.05, f: 2093, gain: 0.45 },
+  { at: 0.06, dur: 0.09, f: 2637, gain: 0.45, decay: 0.07 },
+], 0.6));

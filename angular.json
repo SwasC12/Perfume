@@ -49,13 +49,15 @@
               "zone.js"
             ],
             "tsConfig": "tsconfig.app.json",
+            "webWorkerTsConfig": "tsconfig.worker.json",
             "inlineStyleLanguage": "scss",
-            "allowedCommonJsDependencies": ["qrcode", "jsqr"],
+            "allowedCommonJsDependencies": ["qrcode", "jsqr", "html2canvas", "canvg", "raf", "rgbcolor", "core-js"],
             "assets": [
               {
                 "glob": "**/*",
                 "input": "public"
-              }
+              },
+              { "glob": "zxing_reader.wasm", "input": "node_modules/zxing-wasm/dist/reader", "output": "zxing" }
             ],
             "styles": [
               "src/styles.scss"
@@ -72,8 +74,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "8kB",
-                  "maximumError": "16kB"
+                  "maximumWarning": "16kB",
+                  "maximumError": "32kB"
                 }
               ],
               "outputHashing": "all"

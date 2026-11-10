@@ -42,3 +42,14 @@ testem.log
 Thumbs.db
 .vercel
 .env*
+
+# Secrets / local tooling state (never commit)
+.dev.vars*
+.wrangler/
+*service-account*.json
+*-adminsdk-*.json
+*.pem
+*.p12
+*.keystore
+*.jks
+keystore.properties

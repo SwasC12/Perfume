@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, NgZone, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { OilsService } from './oils.service';
 import { RumiService } from './rumi.service';
@@ -8,15 +8,19 @@ import { AuthService } from './auth.service';
 import { ShopAdminService } from './shop-admin.service';
 import { EmailService } from './email.service';
 import { IconComponent } from './icon.component';
-import { ScannerComponent } from './features/scanner/scanner.component';
+import { PickedProduct, ScannerComponent } from './features/scanner/scanner.component';
+import { onHardwareTrigger } from './device';
 import { STARTER_CATALOGUE } from './starter-catalogue';
 import { imageFromFile } from './cloudinary';
 import { cueForMessage, play } from './ui-fx';
 import QRCode from 'qrcode';
-import jsQR from 'jsqr';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DocKind, customerInvoiceMessage, docFilename, docMessage, docsToPdf, ensureDocStyles, invoiceNo, printDocs, renderDoc, sendPdfToCustomer, sharePdf } from './order-docs';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
-import { Cue, SoundManager, SoundPrefs } from './sound/sound-manager';
+import { BEEP_TONES, Cue, SoundManager, SoundPrefs } from './sound/sound-manager';
 import { initNotifications, notify } from './notifications';
 import { registerPush } from './push';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
@@ -91,6 +95,7 @@ interface ProductForm {
   category: string;
   gender: string;
   inspiredBy: string;
+  barcode: string;
   notesTop: string;
   notesHeart: string;
   notesBase: string;
@@ -104,6 +109,7 @@ interface ProductForm {
   styleUrl: './app.component.scss',
 })
 export class AppComponent {
+  private readonly sanitizer = inject(DomSanitizer);
   readonly oilsSvc = inject(OilsService);
   readonly rumiSvc = inject(RumiService);
   readonly wishSvc = inject(WishlistService);
@@ -345,6 +351,8 @@ export class AppComponent {
   readonly posChange = computed(() => (this.posCash != null ? Math.max(0, this.posCash - this.posTotal()) : 0));
 
   constructor() {
+    this.initBackNavigation();
+    effect(() => { if (this.authSvc.isAdmin) untracked(() => void this.syncFieldTrigger()); else { this.fieldTriggerOff?.(); this.fieldTriggerOff = null; } });
     // Start/stop the shop's live listeners with the admin session.
     effect(() => {
       if (this.authSvc.isAdmin) this.shopSvc.start();
@@ -433,7 +441,55 @@ export class AppComponent {
     });
   }
 
-  go(t: Tab): void { this.tab.set(t); this.menuOpen.set(false); }
+  /** Where the scanner's close button returns to. */
+  readonly prevTab = signal<Tab>('orders');
+  /** Screens visited, so the Android back gesture / browser back can return. */
+  private navStack: Tab[] = [];
+  private readonly zone = inject(NgZone);
+  go(t: Tab, fromBack = false): void {
+    const cur = this.tab();
+    if (t === 'scanner' && cur !== 'scanner') this.prevTab.set(cur);
+    if (t !== cur && !fromBack) {
+      this.navStack.push(cur);
+      if (this.navStack.length > 40) this.navStack.shift();
+      if (!Capacitor.isNativePlatform()) {
+        try { history.pushState({ kfTab: t }, ''); } catch { /* ignore */ }
+      }
+    }
+    this.tab.set(t);
+    this.menuOpen.set(false);
+    document.querySelector('.content')?.scrollTo({ top: 0 });
+  }
+
+  /**
+   * Back: close the top-most layer first (menu, scanner, any dialog), then
+   * walk back through visited screens. Returns false when there is nothing
+   * left, so the caller can minimise the app instead of closing it.
+   */
+  handleBack(): boolean {
+    if (this.menuOpen()) { this.menuOpen.set(false); return true; }
+    const sheet = document.querySelector('.scn-gen-backdrop') as HTMLElement | null;
+    if (sheet) { sheet.click(); return true; }
+    if (this.scannerOpen()) { this.closeScanner(); return true; }
+    const overlays = document.querySelectorAll('.overlay');
+    const top = overlays[overlays.length - 1] as HTMLElement | undefined;
+    if (top) { top.click(); return true; }
+    const prev = this.navStack.pop();
+    if (prev) { this.go(prev, true); return true; }
+    if (this.tab() !== 'dashboard' && this.authSvc.isAdmin) { this.go('dashboard', true); return true; }
+    return false;
+  }
+
+  private initBackNavigation(): void {
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('backButton', () => this.zone.run(() => {
+        if (!this.handleBack()) void CapApp.minimizeApp();
+      }));
+    } else {
+      try { history.replaceState({ kfTab: this.tab() }, ''); } catch { /* ignore */ }
+      window.addEventListener('popstate', () => this.zone.run(() => { this.handleBack(); }));
+    }
+  }
 
   // ---------- Discounts ----------
   discountForm: DiscountForm = this.emptyDiscountForm();
@@ -514,10 +570,6 @@ export class AppComponent {
   // ---------- POS ----------
   effPrice(p: Product): number {
     return p.salePrice != null && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
-  }
-  /** Sizes available for a POS tile (30/50/100 ml). */
-  posSizes(p: Product): { key: ProductSizeKey; label: string }[] {
-    return sizeOptions(p).map((o) => ({ key: o.key, label: o.size.size }));
   }
 
   posAdd(p: Product, chosen?: ProductSizeKey): void {
@@ -758,42 +810,34 @@ export class AppComponent {
     this.selectedForPrint.update((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
   clearPrintSelection(): void { this.selectedForPrint.set(new Set()); }
-  async batchPrintSlips(): Promise<void> {
+  readonly batchKind = signal<DocKind>('slip');
+  readonly docBusy = signal<'print' | 'share' | 'send' | null>(null);
+  private selectedOrders(): Order[] {
     const ids = this.selectedForPrint();
-    const orders = this.shopSvc.orders().filter((o) => ids.has(o.id));
-    if (!orders.length) { this.showToast('Select orders to print'); return; }
-    const slips: string[] = [];
-    for (const o of orders) {
-      let qr = '';
-      try { qr = await QRCode.toDataURL(`KF-ORDER:${o.reference}`, { margin: 1, width: 120, color: { dark: '#141210', light: '#ffffff' } }); } catch { /* no qr */ }
-      slips.push(this.slipHtml(o, qr));
-    }
-    const w = window.open('', '_blank');
-    if (!w) { this.showToast('Allow pop-ups to print slips'); return; }
-    w.document.write(`<!doctype html><html><head><title>Packing slips</title><style>
-      *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
-      .slip{padding:18px;border-bottom:2px dashed #999;page-break-after:always}
-      .top{display:flex;justify-content:space-between;align-items:flex-start}
-      h2{margin:0 0 2px;font-size:18px}.ref{font-size:13px;color:#555}
-      table{width:100%;border-collapse:collapse;margin:10px 0}
-      td,th{text-align:left;padding:4px 0;border-bottom:1px solid #eee;font-size:13px}
-      .tot{font-weight:bold}.qr{width:96px;height:96px}
-      .cust{font-size:13px;margin:6px 0;color:#333}
-    </style></head><body>${slips.join('')}<script>window.onload=function(){window.print()}<\/script></body></html>`);
-    w.document.close();
-    this.clearPrintSelection();
+    return this.shopSvc.orders().filter((o) => ids.has(o.id));
   }
-  private slipHtml(o: Order, qr: string): string {
-    const esc = (s: unknown) => String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!));
-    const rows = (o.items || []).map((i) => `<tr><td>${esc(i.name)}${i.size ? ' (' + esc(i.size) + ')' : ''}</td><td>${i.qty}</td><td>R${(i.price * i.qty).toFixed(0)}</td></tr>`).join('');
-    const c = o.customer || { name: '', email: '', phone: '' } as any;
-    return `<div class="slip"><div class="top"><div>
-      <h2>Kauā Fragrances</h2><div class="ref">Order ${esc(o.reference)} · ${new Date(o.createdAt).toLocaleDateString()}</div>
-      <div class="cust">${esc(c.name)}${c.phone ? ' · ' + esc(c.phone) : ''}<br>${esc(c.email)}</div>
-      </div>${qr ? `<img class="qr" src="${qr}" />` : ''}</div>
-      <table><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="tot">Total: R${(o.total || 0).toFixed(0)} · ${esc(o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery')}</div>
-    </div>`;
+  async batchPrintSlips(): Promise<void> { await this.runDocs('print', this.batchKind(), this.selectedOrders(), true); }
+  async batchShareSlips(): Promise<void> { await this.runDocs('share', this.batchKind(), this.selectedOrders(), true); }
+
+  /** Print or share invoices / packing slips (one order or a batch) as an A4 PDF. */
+  private async runDocs(action: 'print' | 'share', kind: DocKind, orders: Order[], clearAfter = false): Promise<void> {
+    if (!orders.length) { this.showToast('Select orders first'); return; }
+    if (this.docBusy()) return;
+    this.docBusy.set(action);
+    try {
+      const ctx = { settings: this.shopSvc.settings() };
+      const docs = await Promise.all(orders.map((o) => renderDoc(o, kind, ctx)));
+      const name = docFilename(kind, orders);
+      const msg = docMessage(kind, orders);
+      const outcome = action === 'print' ? await printDocs(docs, name, msg) : await sharePdf(await docsToPdf(docs), name, msg);
+      if (outcome === 'downloaded') this.showToast('PDF downloaded. Attach it in WhatsApp');
+      if (clearAfter && outcome !== 'cancelled') this.clearPrintSelection();
+    } catch (e) {
+      console.error(e);
+      this.showToast(action === 'share' ? 'Could not share the PDF' : 'Could not print');
+    } finally {
+      this.docBusy.set(null);
+    }
   }
 
   // ==================== Review moderation ====================
@@ -863,6 +907,7 @@ export class AppComponent {
 
   // ---------- Sound & vibration ----------
   readonly soundPrefs = signal<SoundPrefs>(SoundManager.settings);
+  readonly beepTones = BEEP_TONES;
   readonly soundCues: { key: Cue; label: string }[] = [
     { key: 'scanSuccess', label: 'Successful scan' },
     { key: 'scanError', label: 'Failed / unknown scan' },
@@ -1372,6 +1417,7 @@ export class AppComponent {
       category: p.category ?? '',
       gender: p.gender ?? '',
       inspiredBy: p.inspiredBy ?? '',
+      barcode: p.barcode ?? '',
       notesTop: p.notesTop ?? '',
       notesHeart: p.notesHeart ?? '',
       notesBase: p.notesBase ?? '',
@@ -1428,6 +1474,7 @@ export class AppComponent {
       category: this.productForm.category.trim() || undefined,
       gender: this.productForm.gender.trim() || undefined,
       inspiredBy: this.productForm.inspiredBy.trim() || undefined,
+      barcode: this.productForm.barcode.trim() || undefined,
       notesTop: this.productForm.notesTop.trim() || undefined,
       notesHeart: this.productForm.notesHeart.trim() || undefined,
       notesBase: this.productForm.notesBase.trim() || undefined,
@@ -1616,97 +1663,66 @@ export class AppComponent {
     });
   }
 
-  // ---------- Order QR scanner (dispatch) ----------
+  // ---------- Order QR scanner (lookup from the Orders tab) ----------
   readonly scannerOpen = signal(false);
-  readonly scanError = signal<string | null>(null);
-  scanManual = '';
-  private scanStream?: MediaStream;
-  private scanRAF?: number;
-  private scanCanvas?: HTMLCanvasElement;
-  private scanPaused = false;
-
-  async openScanner(): Promise<void> {
-    this.scanError.set(null);
-    this.scanManual = '';
-    this.scanPaused = false;
-    this.scannerOpen.set(true);
-    await new Promise((r) => setTimeout(r, 0)); // let the modal render
-    if (!navigator.mediaDevices?.getUserMedia) {
-      this.scanError.set('Camera not available on this device — enter the reference below.');
+  openScanner(): void { this.scannerOpen.set(true); }
+  /** Scanner opened from POS (keeps scanning, adds to cart) or Products (finds one). */
+  readonly productScanFor = signal<'pos' | 'products' | null>(null);
+  onScannedProduct(p: PickedProduct): void {
+    if (this.productScanFor() === 'pos') {
+      this.posAdd(p.product, p.sizeKey);
       return;
     }
-    try {
-      this.scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    } catch {
-      this.scanError.set('Camera blocked — allow access, or enter the reference below.');
-      return;
+    this.productScanFor.set(null);
+    this.productSearch.set(p.product.name);
+    const fresh = this.shopSvc.products().find((x) => x.id === p.product.id);
+    if (fresh) this.openEditProduct(fresh);
+  }
+  scannerBack(): void {
+    if (!this.handleBack()) this.go('dashboard', true);
+  }
+
+  // ---- Keyboard-wedge style: volume key scans into the focused field ----
+  readonly fieldScanOpen = signal(false);
+  private fieldTarget: HTMLInputElement | HTMLTextAreaElement | null = null;
+  private fieldTriggerOff: (() => void) | null = null;
+  setFieldTrigger(on: boolean): void {
+    this.setSoundPref('fieldTrigger', on);
+    void this.syncFieldTrigger();
+  }
+  private async syncFieldTrigger(): Promise<void> {
+    this.fieldTriggerOff?.();
+    this.fieldTriggerOff = null;
+    if (!SoundManager.settings.fieldTrigger || !this.authSvc.isAdmin) return;
+    this.fieldTriggerOff = await onHardwareTrigger(() => this.zone.run(() => this.onGlobalTrigger()));
+  }
+  private onGlobalTrigger(): void {
+    if (this.tab() === 'scanner' || this.scannerOpen() || this.productScanFor() || this.fieldScanOpen()) return;
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      this.fieldTarget = el;
+      this.fieldScanOpen.set(true);
+    } else {
+      this.go('scanner');
     }
-    const video = document.getElementById('scanVideo') as HTMLVideoElement | null;
-    if (!video) return;
-    video.srcObject = this.scanStream;
-    video.setAttribute('playsinline', 'true');
-    try { await video.play(); } catch { /* ignore */ }
-    this.scanLoop(video);
   }
-
-  private scanLoop(video: HTMLVideoElement): void {
-    const canvas = this.scanCanvas ?? (this.scanCanvas = document.createElement('canvas'));
-    const tick = () => {
-      if (!this.scannerOpen()) return;
-      if (!this.scanPaused && video.readyState >= video.HAVE_ENOUGH_DATA && video.videoWidth) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-          if (code && code.data) { this.onScanResult(code.data); }
-        }
-      }
-      this.scanRAF = requestAnimationFrame(tick);
-    };
-    this.scanRAF = requestAnimationFrame(tick);
+  onFieldScanned(code: string): void {
+    this.fieldScanOpen.set(false);
+    const el = this.fieldTarget;
+    this.fieldTarget = null;
+    if (!el) return;
+    el.value = code;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+    el.focus();
   }
-
-  private parseOrderRef(text: string): string | null {
-    const t = (text || '').trim();
-    const m = t.match(/^KF-ORDER:(.+)$/i);
-    if (m) return m[1].trim().toUpperCase();
-    if (/^KF-[A-Z0-9]+$/i.test(t)) return t.toUpperCase();
-    return null;
-  }
-
-  private onScanResult(text: string): void {
-    const ref = this.parseOrderRef(text);
-    const order = ref ? this.shopSvc.orders().find((o) => o.reference === ref) : null;
-    if (!order) {
-      // Pause briefly so we don't spam the same failed read every frame.
-      this.scanPaused = true;
-      this.scanError.set(`No order found for "${ref || text.slice(0, 24)}".`);
-      setTimeout(() => { this.scanPaused = false; }, 1500);
-      return;
-    }
-    this.closeScanner();
-    this.openOrderDetail(order);
-    this.showToast(`Order ${order.reference}`);
-  }
-
-  submitManualScan(): void {
-    const ref = this.parseOrderRef(this.scanManual) || this.scanManual.trim().toUpperCase();
-    if (!ref) { this.scanError.set('Enter an order reference.'); return; }
-    const order = this.shopSvc.orders().find((o) => o.reference === ref);
-    if (!order) { this.scanError.set(`No order found for "${ref}".`); return; }
-    this.closeScanner();
-    this.openOrderDetail(order);
-  }
-
-  closeScanner(): void {
+  closeScanner(): void { this.scannerOpen.set(false); }
+  /** A scanned order (from the Scanner tab or the lookup overlay) opens its detail. */
+  onScannedOrder(order: Order): void {
     this.scannerOpen.set(false);
-    if (this.scanRAF) cancelAnimationFrame(this.scanRAF);
-    this.scanRAF = undefined;
-    this.scanStream?.getTracks().forEach((t) => t.stop());
-    this.scanStream = undefined;
+    if (this.tab() === 'scanner') this.go('orders');
+    const fresh = this.shopSvc.orders().find((o) => o.id === order.id) ?? order;
+    this.openOrderDetail(fresh);
   }
 
   // ---------- Orders ----------
@@ -1807,6 +1823,7 @@ export class AppComponent {
 
   // ---------- Order detail / export ----------
   openOrderDetail(o: Order): void {
+    this.docKind.set('invoice');
     this.selectedOrder.set(o);
     this.trackingCourier.set(o.courier || '');
     this.trackingNumber.set(o.trackingNumber || '');
@@ -1816,7 +1833,47 @@ export class AppComponent {
       .then((url) => this.qrDataUrl.set(url))
       .catch(() => {});
   }
-  printInvoice(): void { setTimeout(() => window.print(), 50); }
+  /** Which document the order modal previews / prints / shares. */
+  readonly docKind = signal<DocKind>('invoice');
+  readonly docPreview = signal<SafeHtml | null>(null);
+  private docSeq = 0;
+  async refreshDocPreview(): Promise<void> {
+    const o = this.selectedOrder();
+    if (!o) return;
+    const seq = ++this.docSeq;
+    ensureDocStyles();
+    const html = await renderDoc(o, this.docKind(), { settings: this.shopSvc.settings() });
+    if (seq === this.docSeq) this.docPreview.set(this.sanitizer.bypassSecurityTrustHtml(html));
+  }
+  setDocKind(k: DocKind): void { this.docKind.set(k); }
+  /** Keep the preview in sync with the order (status, tracking) and store settings. */
+  private readonly docPreviewFx = effect(() => {
+    const o = this.selectedOrder();
+    this.docKind();
+    this.shopSvc.settings();
+    if (!o) { this.docPreview.set(null); return; }
+    untracked(() => void this.refreshDocPreview());
+  });
+  printInvoice(): void { const o = this.selectedOrder(); if (o) void this.runDocs('print', this.docKind(), [o]); }
+  /** Invoice PDF straight into the customer's WhatsApp chat. */
+  async sendInvoiceToCustomer(): Promise<void> {
+    const o = this.selectedOrder();
+    if (!o || this.docBusy()) return;
+    if (!o.customer?.phone) { this.showToast('No phone number on this order'); return; }
+    this.docBusy.set('send');
+    try {
+      const settings = this.shopSvc.settings();
+      const blob = await docsToPdf([await renderDoc(o, 'invoice', { settings })]);
+      const r = await sendPdfToCustomer(blob, docFilename('invoice', [o]), o.customer.phone, customerInvoiceMessage(o, settings));
+      if (r === 'downloaded') this.showToast('Invoice downloaded. Attach it in the WhatsApp chat');
+    } catch (e) {
+      console.error(e);
+      this.showToast('Could not send the invoice');
+    } finally {
+      this.docBusy.set(null);
+    }
+  }
+  shareInvoice(): void { const o = this.selectedOrder(); if (o) void this.runDocs('share', this.docKind(), [o]); }
 
   async saveTracking(o: Order): Promise<void> {
     try {
@@ -1951,7 +2008,7 @@ export class AppComponent {
         size50: this.emptySizeForm('50ml', false),
         size100: this.emptySizeForm('100ml', false),
       },
-      category: '', gender: '', inspiredBy: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
+      category: '', gender: '', inspiredBy: '', barcode: '', notesTop: '', notesHeart: '', notesBase: '', longDescription: '',
     };
   }
 

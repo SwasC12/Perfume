@@ -1,242 +1,551 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject, signal } from '@angular/core';
+import {
+  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild,
+  computed, inject, input, output, signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { readBarcodes } from 'zxing-wasm/reader';
 import QRCode from 'qrcode';
 import { ShopAdminService } from '../../shop-admin.service';
 import { SoundManager } from '../../sound/sound-manager';
-import { Order, Product } from '../../models';
+import { Order, Product, ProductSizeKey, PRODUCT_SIZE_LABELS, sizeOptions } from '../../models';
+import { IconComponent } from '../../icon.component';
+import { onHardwareTrigger } from '../../device';
+import { ScanEngine, ScanHit } from './scan-engine';
+
+type ResultKind = 'ok' | 'err' | 'dup';
+/** Workflow, like the apps on a rugged handheld. */
+export type ScanMode = 'lookup' | 'receive' | 'count' | 'pack';
+/** Why the scanner was opened: its own tab, or to pick something for another screen. */
+export type ScanPurpose = 'tab' | 'order' | 'product' | 'field';
+
+export interface PickedProduct { product: Product; sizeKey?: ProductSizeKey; }
+
+interface ScanResult {
+  kind: ResultKind;
+  code: string;
+  title: string;
+  sub: string;
+  at: number;
+  order?: Order;
+  product?: Product;
+  sizeKey?: ProductSizeKey;
+  batch?: string;
+}
+
+/** A product line in a Receive / Count session. */
+interface StockLine {
+  key: string;
+  product: Product;
+  sizeKey?: ProductSizeKey;
+  qty: number;
+}
+
+/** One order line in Pack mode. */
+interface PackLine {
+  productId: string;
+  sizeKey?: ProductSizeKey;
+  name: string;
+  size?: string;
+  need: number;
+  got: number;
+}
+
+const REREAD_MS = 1200;
+const DUPLICATE_MS = 8000;
+const WEDGE_GAP_MS = 45;
+const MODES: { key: ScanMode; label: string; hint: string }[] = [
+  { key: 'lookup', label: 'Lookup', hint: 'Scan anything to see what it is' },
+  { key: 'receive', label: 'Receive', hint: 'Each scan adds +1 to stock' },
+  { key: 'count', label: 'Count', hint: 'Stock take: scan every unit on the shelf' },
+  { key: 'pack', label: 'Pack', hint: 'Scan the slip, then every item going in the box' },
+];
 
 @Component({
   selector: 'app-scanner',
   standalone: true,
-  imports: [FormsModule, CurrencyPipe, DatePipe],
+  imports: [FormsModule, CurrencyPipe, DatePipe, IconComponent],
   templateUrl: './scanner.component.html',
   styleUrl: './scanner.component.scss',
 })
 export class ScannerComponent implements AfterViewInit, OnDestroy {
   private shop = inject(ShopAdminService);
+  private zone = inject(NgZone);
+
+  readonly purpose = input<ScanPurpose>('tab');
+  /** Product purpose only: keep scanning after each hit (e.g. POS: scan, scan, scan). */
+  readonly keepOpen = input(false);
+  readonly closed = output<void>();
+  readonly orderPicked = output<Order>();
+  readonly productPicked = output<PickedProduct>();
+  readonly codePicked = output<string>();
+
   @ViewChild('video') videoRef?: ElementRef<HTMLVideoElement>;
-  @ViewChild('canvas') canvasRef?: ElementRef<HTMLCanvasElement>;
 
-  readonly scanning = signal(false);
+  readonly modes = MODES;
+  readonly sizeLabels = PRODUCT_SIZE_LABELS;
+  readonly native = ScanEngine.isNative();
+  readonly state = signal<'starting' | 'live' | 'error'>('starting');
   readonly error = signal<string | null>(null);
-  readonly lastCode = signal('');
-  readonly scanned = signal<{ code: string; label: string; at: number }[]>([]);
-  readonly order = signal<Order | null>(null);
-  readonly product = signal<Product | null>(null);
-  readonly batchCode = signal('');
+  readonly engineLabel = signal('');
+  readonly torchOn = signal(false);
+  readonly torchAvailable = signal(false);
+  readonly continuous = signal(SoundManager.settings.continuousScan);
+  readonly armed = signal(true);
+  readonly flash = signal<ResultKind | null>(null);
+  readonly result = signal<ScanResult | null>(null);
+  readonly history = signal<ScanResult[]>([]);
+  readonly historyOpen = signal(false);
+  readonly busy = signal(false);
+  readonly okCount = computed(() => this.history().filter((h) => h.kind === 'ok').length);
 
+  readonly mode = signal<ScanMode>('lookup');
+  readonly modeHint = computed(() => MODES.find((m) => m.key === this.mode())?.hint ?? '');
+  readonly lines = signal<StockLine[]>([]);
+  readonly lineUnits = computed(() => this.lines().reduce((t, l) => t + l.qty, 0));
+  readonly packOrder = signal<Order | null>(null);
+  readonly pack = signal<PackLine[]>([]);
+  readonly packDone = computed(() => this.pack().length > 0 && this.pack().every((l) => l.got >= l.need));
+  readonly packProgress = computed(() => {
+    const need = this.pack().reduce((t, l) => t + l.need, 0);
+    const got = this.pack().reduce((t, l) => t + Math.min(l.got, l.need), 0);
+    return { need, got, pct: need ? Math.round((got / need) * 100) : 0 };
+  });
+
+  manual = '';
+  readonly genOpen = signal(false);
   genType: 'order' | 'batch' | 'product' | 'custom' = 'order';
   genValue = '';
   readonly generated = signal<string | null>(null);
   readonly genError = signal<string | null>(null);
 
-  readonly torchOn = signal(false);
-  readonly notice = signal('');
-  /** When each code was last accepted, so a repeat is treated as a duplicate. */
+  private engine = new ScanEngine((hit) => this.zone.run(() => this.onHit(hit)));
+  private lastText = '';
+  private lastTextAt = 0;
   private acceptedAt = new Map<string, number>();
-  private stream: MediaStream | null = null;
-  private raf = 0;
-  private detector: any = null;
-  private busy = false;
-  private lastAt = 0;
-  private lastFrame = 0;
+  private flashTimer: ReturnType<typeof setTimeout> | undefined;
+  private wedgeBuf = '';
+  private wedgeAt = 0;
+  private untrigger: (() => void) | null = null;
 
-  /** The page owns the camera: it starts on entry and runs until you leave. */
   ngAfterViewInit(): void {
-    setTimeout(() => void this.start(), 120);
+    void SoundManager.unlock();
+    void this.start();
+    if (SoundManager.settings.volumeTrigger) {
+      void onHardwareTrigger(() => this.zone.run(() => this.trigger())).then((off) => (this.untrigger = off));
+    }
+  }
+
+  ngOnDestroy(): void {
+    void this.engine.stop();
+    this.untrigger?.();
+    clearTimeout(this.flashTimer);
   }
 
   async start(): Promise<void> {
-    if (this.scanning()) return;
+    this.state.set('starting');
     this.error.set(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-      });
-      this.stream = stream;
-      const video = this.videoRef?.nativeElement;
-      if (!video) return;
-      video.srcObject = stream;
-      await video.play();
-      // Native decoder where the browser has one (Android Chrome): QR + 1D.
-      const Detector = (window as any).BarcodeDetector;
-      let formats: string[] = [];
-      try {
-        formats = Detector && Detector.getSupportedFormats ? await Detector.getSupportedFormats() : [];
-      } catch { formats = []; }
-      this.detector = Detector && formats.length ? new Detector({ formats }) : null;
-      this.scanning.set(true);
-      this.loop();
-    } catch {
-      this.error.set('Camera unavailable. Allow camera access and try again.');
+      await this.engine.start(this.videoRef?.nativeElement ?? null);
+      this.torchAvailable.set(this.engine.torchAvailable);
+      this.engineLabel.set(this.engine.kind === 'native' ? 'ML Kit' : this.engine.kind === 'detector' ? 'Fast decode' : 'Web decode');
+      this.state.set('live');
+    } catch (e: any) {
+      await this.engine.stop();
+      this.state.set('error');
+      this.error.set(
+        /denied|NotAllowed/i.test(String(e?.message || e?.name || e))
+          ? 'Camera access was blocked. Allow the camera for this app, then tap Retry.'
+          : 'Could not start the camera. You can still type or wedge-scan codes below.',
+      );
     }
   }
 
-  /** Torch / flashlight where the camera exposes it (most Android + iPad Pro). */
+  close(): void {
+    void this.engine.stop();
+    this.closed.emit();
+  }
+
   async toggleTorch(): Promise<void> {
-    const track = this.stream?.getVideoTracks()[0];
-    if (!track) return;
     const next = !this.torchOn();
-    try {
-      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
-      this.torchOn.set(next);
-    } catch {
-      this.error.set('This camera has no torch.');
-    }
+    if (await this.engine.setTorch(next)) this.torchOn.set(next);
   }
 
-  stop(): void {
-    this.scanning.set(false);
-    cancelAnimationFrame(this.raf);
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    this.detector = null;
-    const video = this.videoRef?.nativeElement;
-    if (video) video.srcObject = null;
+  toggleMode(): void {
+    const next = !this.continuous();
+    this.continuous.set(next);
+    this.armed.set(true);
+    SoundManager.set('continuousScan', next);
   }
 
-  private loop = (): void => {
-    if (!this.scanning()) return;
-    const video = this.videoRef?.nativeElement;
-    if (video && video.readyState >= 2 && !this.busy) {
-      this.busy = true;
-      if (this.detector && this.detector.detect) {
-        this.detector.detect(video)
-          .then((codes: any[]) => { if (codes && codes[0]?.rawValue) this.onScan(codes[0].rawValue); })
-          .catch(() => { this.detector = null; })
-          .finally(() => { this.busy = false; });
-      } else {
-        const now = performance.now();
-        if (now - this.lastFrame >= 70) {
-          this.lastFrame = now;
-          void this.scanWithCanvas(video).finally(() => { this.busy = false; });
-        } else {
-          this.busy = false;
-        }
-      }
-    }
-    this.raf = requestAnimationFrame(this.loop);
-  };
-
-  /**
-   * Decode a frame with zxing-wasm (QR *and* 1D barcodes). We only read the
-   * centre 70% — that's where the user aims — which cuts the pixel work in half
-   * and lets us run at ~14 fps instead of ~11 fps with jsQR's single-symbology,
-   * JS-only decoder.
-   */
-  private async scanWithCanvas(video: HTMLVideoElement): Promise<void> {
-    const canvas = this.canvasRef?.nativeElement;
-    if (!canvas) return;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return;
-
-    const rw = Math.max(1, Math.round(vw * 0.7));
-    const rh = Math.max(1, Math.round(vh * 0.7));
-    const sx = Math.round((vw - rw) / 2);
-    const sy = Math.round((vh - rh) / 2);
-    const scale = Math.min(1, 720 / Math.max(rw, rh));
-    const cw = Math.max(1, Math.round(rw * scale));
-    const ch = Math.max(1, Math.round(rh * scale));
-
-    canvas.width = cw;
-    canvas.height = ch;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-    ctx.drawImage(video, sx, sy, rw, rh, 0, 0, cw, ch);
-    const frame = ctx.getImageData(0, 0, cw, ch);
-
-    try {
-      const results = await readBarcodes(frame, {
-        formats: ['QRCode', 'Code128', 'Code39', 'EAN13', 'EAN8', 'UPCA', 'UPCE', 'ITF', 'DataMatrix', 'PDF417', 'Aztec'],
-        tryHarder: false,
-        maxNumberOfSymbols: 1,
-      });
-      const hit = results && results[0];
-      if (hit && hit.text) this.onScan(hit.text);
-    } catch {
-      /* a bad frame must never stop the loop */
-    }
+  setMode(m: ScanMode): void {
+    if (m === this.mode()) return;
+    this.mode.set(m);
+    this.result.set(null);
+    this.lastText = '';
+    this.acceptedAt.clear();
+    SoundManager.vibrate('button');
   }
 
-  private onScan(raw: string): void {
-    const value = String(raw || '').trim();
-    if (!value) return;
+  /** On-screen trigger or a volume key: arm for one read. */
+  trigger(): void {
+    this.armed.set(true);
+    this.lastText = '';
+    SoundManager.vibrate('button');
+  }
+
+  // ------------------------------------------------------------ decoding
+
+  private onHit(hit: ScanHit): void {
+    const text = String(hit.text || '').trim();
+    if (!text) return;
+    if (!this.continuous() && !this.armed()) return;
     const now = Date.now();
-    // Camera frames re-detect the same symbol constantly — never beep for those.
-    if (value === this.lastCode() && now - this.lastAt < 1500) return;
-    this.lastCode.set(value);
-    this.lastAt = now;
-
-    const seenAt = this.acceptedAt.get(value);
-    if (seenAt && now - seenAt < 10000) {
-      this.notice.set('Already scanned — ' + value);
-      SoundManager.feedback('duplicate');
+    if (text === this.lastText && now - this.lastTextAt < REREAD_MS) {
+      this.lastTextAt = now;
       return;
     }
-    this.handle(value);
+    this.lastText = text;
+    this.lastTextAt = now;
+    this.process(text);
   }
 
-  private handle(code: string): void {
-    this.order.set(null);
-    this.product.set(null);
-    this.batchCode.set('');
+  /** Every input (camera, keyboard wedge, typed) ends up here. */
+  process(code: string): void {
+    const purpose = this.purpose();
+    if (purpose === 'field') {
+      this.emit({ kind: 'ok', code, at: Date.now(), title: code, sub: 'Sent to field' });
+      this.finish(() => this.codePicked.emit(code));
+      return;
+    }
+    const mode = purpose === 'tab' ? this.mode() : 'lookup';
+    if (mode === 'receive' || mode === 'count') return this.stockScan(code);
+    if (mode === 'pack') return this.packScan(code);
 
-    let ref = '';
-    let label = code;
-    if (code.startsWith('KF-ORDER:')) ref = code.slice(9).trim();
-    else if (/^KF-[A-Z2-9]{5}$/i.test(code)) ref = code.toUpperCase();
-    else if (code.startsWith('KF-BATCH:')) {
-      this.batchCode.set(code.slice(9).trim());
-      label = 'Batch ' + this.batchCode();
-    } else if (code.startsWith('KF-PRODUCT:')) {
-      const id = code.slice(11).trim();
-      const product = this.shop.products().find((p) => p.id === id);
-      if (product) { this.product.set(product); label = product.name; }
+    const now = Date.now();
+    const seen = this.acceptedAt.get(code);
+    if (seen && now - seen < DUPLICATE_MS && purpose === 'tab') {
+      const prev = this.history().find((h) => h.code === code && h.kind === 'ok');
+      this.emit({ kind: 'dup', code, at: now, title: 'Already scanned', sub: prev ? prev.title : code, order: prev?.order, product: prev?.product, batch: prev?.batch });
+      return;
     }
 
+    const r = this.lookup(code);
+    if (purpose === 'order' && r.kind === 'ok' && !r.order) {
+      this.emit({ ...r, kind: 'err', title: 'Not an order', sub: 'Scan the QR on an order slip' });
+      return;
+    }
+    if (purpose === 'product' && r.kind === 'ok' && !r.product) {
+      this.emit({ ...r, kind: 'err', title: 'Not a product', sub: 'Scan a product barcode or label' });
+      return;
+    }
+    if (r.kind === 'ok') this.acceptedAt.set(code, now);
+    this.emit(r);
+    if (r.kind !== 'ok') return;
+    if (purpose === 'order' && r.order) this.finish(() => this.orderPicked.emit(r.order!));
+    if (purpose === 'product' && r.product) {
+      const picked = { product: r.product, sizeKey: r.sizeKey };
+      if (this.keepOpen()) { this.productPicked.emit(picked); this.result.set({ ...r, sub: 'Added to sale · ' + r.sub }); }
+      else this.finish(() => this.productPicked.emit(picked));
+    }
+  }
+
+  /** Let the beep + green flash register, then hand the result back. */
+  private finish(fn: () => void): void {
+    setTimeout(() => { void this.engine.stop(); fn(); }, 220);
+  }
+
+  private parseOrderRef(code: string): string {
+    if (/^KF-ORDER:/i.test(code)) return code.slice(9).trim().toUpperCase();
+    if (/^KF-[A-Z0-9]{4,}$/i.test(code) && !/^KF-(PRODUCT|BATCH)/i.test(code)) return code.toUpperCase();
+    return '';
+  }
+
+  /** KF-PRODUCT:<id>[:size50], a printed barcode, or a bare product id. */
+  private findProduct(code: string): PickedProduct | null {
+    const products = this.shop.products();
+    if (/^KF-PRODUCT:/i.test(code)) {
+      const [id, size] = code.slice(11).trim().split(':');
+      const product = products.find((p) => p.id === id);
+      if (!product) return null;
+      const sizeKey = (['size30', 'size50', 'size100'] as ProductSizeKey[]).find((k) => k === size || PRODUCT_SIZE_LABELS[k] === size);
+      return { product, sizeKey };
+    }
+    const product = products.find((p) => (p.barcode && p.barcode === code) || p.id === code);
+    return product ? { product } : null;
+  }
+
+  private sizeFor(p: PickedProduct): ProductSizeKey | undefined {
+    if (p.sizeKey) return p.sizeKey;
+    const opts = sizeOptions(p.product);
+    return opts.length === 1 ? opts[0].key : undefined;
+  }
+
+  private lookup(code: string): ScanResult {
+    const at = Date.now();
+    const ref = this.parseOrderRef(code);
     if (ref) {
       const order = this.shop.orders().find((o) => o.reference === ref || o.id === ref);
       if (order) {
-        this.order.set(order);
-        label = 'Order ' + order.reference + ' · ' + order.customer.name;
-      } else {
-        label = 'Order ' + ref + ' (not loaded)';
+        const items = order.items?.reduce((n, i) => n + i.qty, 0) ?? 0;
+        return { kind: 'ok', code, at, order, title: order.reference, sub: `${order.customer?.name || 'Customer'} · ${items} item${items === 1 ? '' : 's'}` };
+      }
+      return { kind: 'err', code, at, title: 'Order not found', sub: ref + ' isn’t in the loaded orders' };
+    }
+    if (/^KF-BATCH:/i.test(code)) {
+      const batch = code.slice(9).trim();
+      return { kind: 'ok', code, at, batch, title: 'Batch ' + batch, sub: 'Batch code' };
+    }
+    const found = this.findProduct(code);
+    if (found) {
+      const sizeKey = this.sizeFor(found);
+      const stock = this.stockOf(found.product, sizeKey);
+      return {
+        kind: 'ok', code, at, product: found.product, sizeKey,
+        title: found.product.name + (sizeKey ? ' · ' + PRODUCT_SIZE_LABELS[sizeKey] : ''),
+        sub: [found.product.category, found.product.gender, stock != null ? stock + ' in stock' : ''].filter(Boolean).join(' · '),
+      };
+    }
+    return { kind: 'err', code, at, title: 'Not recognised', sub: code.length > 48 ? code.slice(0, 48) + '…' : code };
+  }
+
+  private emit(r: ScanResult): void {
+    this.result.set(r);
+    this.history.update((h) => [r, ...h].slice(0, 200));
+    SoundManager.feedback(r.kind === 'ok' ? 'scanSuccess' : r.kind === 'dup' ? 'duplicate' : 'scanError');
+    this.flash.set(r.kind);
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => this.flash.set(null), 380);
+    if (!this.continuous() && r.kind === 'ok') this.armed.set(false);
+  }
+
+  // ------------------------------------------------- receive / count mode
+
+  stockOf(p: Product, sizeKey?: ProductSizeKey): number | null {
+    if (sizeKey && p.sizes?.[sizeKey]) return p.sizes[sizeKey]!.stockQty ?? null;
+    return p.stockQty ?? null;
+  }
+
+  needsSize(l: StockLine): boolean {
+    return !l.sizeKey && sizeOptions(l.product).length > 1;
+  }
+
+  sizeChoices(p: Product): { key: ProductSizeKey; label: string }[] {
+    return sizeOptions(p).map((o) => ({ key: o.key, label: o.size.size || PRODUCT_SIZE_LABELS[o.key] }));
+  }
+
+  private stockScan(code: string): void {
+    const found = this.findProduct(code);
+    if (!found) {
+      this.emit({ kind: 'err', code, at: Date.now(), title: 'Unknown product', sub: code });
+      return;
+    }
+    const sizeKey = this.sizeFor(found);
+    const key = found.product.id + '|' + (sizeKey || '');
+    let qty = 1;
+    this.lines.update((ls) => {
+      const ex = ls.find((l) => l.key === key);
+      if (ex) { qty = ex.qty + 1; return [{ ...ex, qty }, ...ls.filter((l) => l !== ex)]; }
+      return [{ key, product: found.product, sizeKey, qty: 1 }, ...ls];
+    });
+    const label = found.product.name + (sizeKey ? ' · ' + PRODUCT_SIZE_LABELS[sizeKey] : '');
+    this.emit({
+      kind: 'ok', code, at: Date.now(), product: found.product, sizeKey, title: label,
+      sub: this.mode() === 'receive' ? `+${qty} to receive` : `Counted ${qty}`,
+    });
+  }
+
+  setLineQty(l: StockLine, qty: number): void {
+    const q = Math.max(0, Math.floor(Number(qty) || 0));
+    this.lines.update((ls) => (q === 0 && this.mode() === 'receive' ? ls.filter((x) => x.key !== l.key) : ls.map((x) => (x.key === l.key ? { ...x, qty: q } : x))));
+  }
+
+  setLineSize(l: StockLine, sizeKey: ProductSizeKey): void {
+    const key = l.product.id + '|' + sizeKey;
+    this.lines.update((ls) => {
+      const rest = ls.filter((x) => x.key !== l.key);
+      const ex = rest.find((x) => x.key === key);
+      if (ex) return rest.map((x) => (x === ex ? { ...x, qty: x.qty + l.qty } : x));
+      return [{ ...l, key, sizeKey }, ...rest];
+    });
+  }
+
+  clearLines(): void { this.lines.set([]); }
+
+  /** Write the session to stock: Receive adds, Count overwrites. */
+  async applyStock(): Promise<void> {
+    const lines = this.lines().filter((l) => !this.needsSize(l));
+    if (!lines.length || this.busy()) return;
+    this.busy.set(true);
+    const receive = this.mode() === 'receive';
+    const byProduct = new Map<string, StockLine[]>();
+    for (const l of lines) byProduct.set(l.product.id, [...(byProduct.get(l.product.id) ?? []), l]);
+    let ok = 0;
+    let failed = 0;
+    for (const [id, ls] of byProduct) {
+      const fresh = this.shop.products().find((p) => p.id === id) ?? ls[0].product;
+      try {
+        const patch: Partial<Product> = {};
+        const sized = ls.filter((l) => l.sizeKey && fresh.sizes?.[l.sizeKey!]);
+        if (sized.length) {
+          const sizes = { ...(fresh.sizes ?? {}) };
+          for (const l of sized) {
+            const cur = sizes[l.sizeKey!]!;
+            const next = receive ? (cur.stockQty ?? 0) + l.qty : l.qty;
+            sizes[l.sizeKey!] = { ...cur, stockQty: next, inStock: next > 0 };
+          }
+          patch.sizes = sizes;
+        }
+        const plain = ls.filter((l) => !l.sizeKey || !fresh.sizes?.[l.sizeKey]);
+        if (plain.length) {
+          const add = plain.reduce((t, l) => t + l.qty, 0);
+          const next = receive ? (fresh.stockQty ?? 0) + add : add;
+          patch.stockQty = next;
+          patch.inStock = next > 0;
+        }
+        await this.shop.updateProduct(id, patch);
+        ok++;
+      } catch {
+        failed++;
       }
     }
-    const accepted = !!(this.order() || this.product() || this.batchCode());
-    if (accepted) {
-      this.acceptedAt.set(code, Date.now());
-      this.notice.set(label);
-      SoundManager.feedback('scanSuccess');
-    } else {
-      this.notice.set('Not recognised — ' + code);
+    this.busy.set(false);
+    if (failed) {
+      this.result.set({ kind: 'err', code: '', at: Date.now(), title: 'Some updates failed', sub: `${ok} saved, ${failed} failed. Are you signed in?` });
       SoundManager.feedback('scanError');
+    } else {
+      this.result.set({ kind: 'ok', code: '', at: Date.now(), title: receive ? 'Stock received' : 'Stock count saved', sub: `${ok} product${ok === 1 ? '' : 's'} updated` });
+      SoundManager.feedback('stockReceived');
+      this.lines.set([]);
     }
-
-    this.scanned.update((list) => [{ code, label, at: Date.now() }, ...list].slice(0, 40));
   }
 
-  async markShipped(): Promise<void> {
-    const order = this.order();
-    if (!order) return;
+  // ------------------------------------------------------------ pack mode
+
+  private packScan(code: string): void {
+    const ref = this.parseOrderRef(code);
+    if (ref) {
+      const order = this.shop.orders().find((o) => o.reference === ref || o.id === ref);
+      if (!order) { this.emit({ kind: 'err', code, at: Date.now(), title: 'Order not found', sub: ref }); return; }
+      this.packOrder.set(order);
+      this.pack.set((order.items || []).map((i) => ({ productId: i.productId, sizeKey: i.sizeKey, name: i.name, size: i.size, need: i.qty, got: 0 })));
+      this.emit({ kind: 'ok', code, at: Date.now(), order, title: 'Packing ' + order.reference, sub: `${order.customer?.name || ''} · scan each item` });
+      return;
+    }
+    if (!this.packOrder()) {
+      this.emit({ kind: 'err', code, at: Date.now(), title: 'Scan the order slip first', sub: 'Then scan every item going in the box' });
+      return;
+    }
+    const found = this.findProduct(code);
+    if (!found) { this.emit({ kind: 'err', code, at: Date.now(), title: 'Unknown product', sub: code }); return; }
+    const lines = this.pack();
+    const match = (l: PackLine) => l.productId === found.product.id && (!found.sizeKey || !l.sizeKey || l.sizeKey === found.sizeKey);
+    const open = lines.find((l) => match(l) && l.got < l.need);
+    if (!open) {
+      const any = lines.find(match);
+      this.emit(any
+        ? { kind: 'dup', code, at: Date.now(), title: 'Already packed', sub: `${any.name}: ${any.need} of ${any.need}` }
+        : { kind: 'err', code, at: Date.now(), title: 'Not in this order', sub: found.product.name + ', put it back' });
+      return;
+    }
+    this.pack.update((ls) => ls.map((l) => (l === open ? { ...l, got: l.got + 1 } : l)));
+    this.emit({ kind: 'ok', code, at: Date.now(), product: found.product, title: open.name + (open.size ? ' · ' + open.size : ''), sub: `${open.got + 1} of ${open.need}` });
+    if (this.packDone()) setTimeout(() => SoundManager.feedback('orderCompleted'), 160);
+  }
+
+  async markPacked(): Promise<void> {
+    const o = this.packOrder();
+    if (!o || this.busy()) return;
+    this.busy.set(true);
     try {
-      await this.shop.setOrderStatus(order, 'shipped');
-      this.order.set({ ...order, status: 'shipped' });
+      await this.shop.setOrderStage(o.id, 'packaged');
+      this.result.set({ kind: 'ok', code: '', at: Date.now(), title: o.reference + ' packed', sub: 'Stage set to packaged. Scan the next slip.' });
+      SoundManager.feedback('orderDispatched');
+      this.packOrder.set(null);
+      this.pack.set([]);
+    } catch {
+      this.result.set({ kind: 'err', code: '', at: Date.now(), title: 'Update failed', sub: 'Could not mark ' + o.reference + ' packed' });
+      SoundManager.feedback('scanError');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  resetPack(): void { this.packOrder.set(null); this.pack.set([]); this.result.set(null); }
+
+  // ------------------------------------------------------- manual / wedge
+
+  submitManual(): void {
+    const v = this.manual.trim();
+    if (!v) return;
+    this.manual = '';
+    this.process(v);
+  }
+
+  /** Hardware scanners "type" fast and end with Enter: catch that anywhere. */
+  @HostListener('document:keydown', ['$event'])
+  onKey(e: KeyboardEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const now = performance.now();
+    if (now - this.wedgeAt > WEDGE_GAP_MS * 3) this.wedgeBuf = '';
+    this.wedgeAt = now;
+    if (e.key === 'Enter') {
+      if (this.wedgeBuf.length >= 3) { e.preventDefault(); this.process(this.wedgeBuf); }
+      this.wedgeBuf = '';
+    } else if (e.key.length === 1) {
+      this.wedgeBuf += e.key;
+    } else if (e.key === 'Escape') {
+      this.close();
+    }
+  }
+
+  // -------------------------------------------------------------- actions
+
+  open(r: ScanResult): void {
+    if (r.order) { void this.engine.stop(); this.orderPicked.emit(r.order); }
+  }
+
+  canShip(o: Order | undefined): boolean {
+    return !!o && (o.status === 'paid' || o.status === 'fulfilled');
+  }
+
+  async markShipped(r: ScanResult): Promise<void> {
+    const o = r.order;
+    if (!o) return;
+    this.busy.set(true);
+    try {
+      await this.shop.setOrderStatus(o, 'shipped');
+      this.result.set({ ...r, order: { ...o, status: 'shipped' }, sub: 'Marked shipped · ' + r.sub });
       SoundManager.feedback('orderDispatched');
     } catch {
-      this.error.set('Could not update the order.');
+      this.result.set({ ...r, kind: 'err', title: 'Update failed', sub: 'Could not mark ' + o.reference + ' shipped' });
+      SoundManager.feedback('scanError');
+    } finally {
+      this.busy.set(false);
     }
   }
 
-  clear(): void {
-    this.scanned.set([]);
-    this.lastCode.set('');
-    this.order.set(null);
-    this.product.set(null);
-    this.batchCode.set('');
+  clearHistory(): void {
+    this.history.set([]);
+    this.result.set(null);
+    this.acceptedAt.clear();
+    this.lastText = '';
+  }
+
+  /** Export this session's scans as CSV (like a handheld's batch upload). */
+  exportCsv(): void {
+    const rows = [['time', 'result', 'code', 'item', 'detail']];
+    for (const h of [...this.history()].reverse()) {
+      rows.push([new Date(h.at).toISOString(), h.kind, h.code, h.title, h.sub]);
+    }
+    const csv = rows.map((r) => r.map((c) => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kaua-scans-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
   async generate(): Promise<void> {
@@ -248,17 +557,9 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     else if (this.genType === 'batch') payload = 'KF-BATCH:' + value;
     else if (this.genType === 'product') payload = 'KF-PRODUCT:' + value;
     try {
-      const url = await QRCode.toDataURL(payload, {
-        margin: 1, width: 512,
-        color: { dark: '#141210', light: '#ffffff' },
-      });
-      this.generated.set(url);
+      this.generated.set(await QRCode.toDataURL(payload, { margin: 1, width: 512, color: { dark: '#0B1F3A', light: '#ffffff' } }));
     } catch {
       this.genError.set('Could not generate the QR code.');
     }
-  }
-
-  ngOnDestroy(): void {
-    this.stop();
   }
 }

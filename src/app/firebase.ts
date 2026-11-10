@@ -1,7 +1,7 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
-import { firebaseConfig, isFirebaseConfigured } from './firebase.config';
+import { firebaseConfig, isFirebaseConfigured, ADMIN_UID } from './firebase.config';
 
 let app: FirebaseApp | undefined;
 let db: Firestore | undefined;
@@ -24,4 +24,4 @@ export function getAuthInstance(): Auth {
   return auth;
 }
 
-export { isFirebaseConfigured };
+export { isFirebaseConfigured, ADMIN_UID };

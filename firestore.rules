@@ -10,8 +10,13 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Personal Oil Tracker sync — no login; knowing the 6+ char code grants access.
+    // Writes may only carry the sync fields, so the collection can't be used as
+    // free general-purpose storage. Pick a long, random code (12+ chars).
     match /workspaces/{code} {
-      allow get, write: if code.size() >= 6;
+      function validCode() { return code.size() >= 6 && code.size() <= 128; }
+      allow get, delete: if validCode();
+      allow create, update: if validCode()
+        && request.resource.data.keys().hasOnly(['oils', 'rumi', 'wishlist', 'updatedAt']);
       allow list: if false;
     }
 
@@ -28,6 +33,7 @@ service cloud.firestore {
       allow create: if request.resource.data.rating is int
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
         && request.resource.data.productId is string
+        && request.resource.data.productId.size() <= 128
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 60
         && request.resource.data.text is string
@@ -59,8 +65,19 @@ service cloud.firestore {
 
     // Customer profiles — each customer manages their own; the admin can view/modify all.
     match /customers/{uid} {
+      // A customer may only store their own profile fields (no extra keys such as
+      // roles or credit balances that admin tooling might later trust).
       allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
-      allow write: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow create, update: if isAdmin() || (request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'billing', 'delivery', 'updatedAt'])
+        && (!('uid' in request.resource.data) || request.resource.data.uid == uid));
+    }
+
+    // Referral codes / progress — managed by the shop Worker (Admin SDK).
+    // The admin app reads them; nobody else gets browser access.
+    match /referrals/{id} {
+      allow read, write: if isAdmin();
     }
 
     // Promo codes are checked by the shop Worker (Admin SDK). No browser reads.
@@ -73,7 +90,9 @@ service cloud.firestore {
       allow create: if request.resource.data.notified == false
         && request.resource.data.email is string
         && request.resource.data.email.size() < 200
-        && request.resource.data.productId is string;
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() <= 128
+        && request.resource.data.keys().hasOnly(['productId', 'productName', 'email', 'createdAt', 'notified']);
       allow read, update, delete: if isAdmin();
     }
 

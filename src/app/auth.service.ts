@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getAuthInstance, isFirebaseConfigured } from './firebase';
+import { getAuthInstance, isFirebaseConfigured, ADMIN_UID } from './firebase';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -13,6 +13,12 @@ export class AuthService {
   constructor() {
     if (this.configured) {
       onAuthStateChanged(getAuthInstance(), (u) => {
+        // Storefront customers share this Firebase project. Never keep a
+        // non-admin account signed in here.
+        if (u && u.uid !== ADMIN_UID) {
+          void signOut(getAuthInstance());
+          u = null;
+        }
         this.user.set(u);
         this.ready.set(true);
       });
@@ -22,14 +28,19 @@ export class AuthService {
   }
 
   get isAdmin(): boolean {
-    return !!this.user();
+    return this.user()?.uid === ADMIN_UID;
   }
 
   async signIn(email: string, password: string): Promise<boolean> {
     this.busy.set(true);
     this.error.set(null);
     try {
-      await signInWithEmailAndPassword(getAuthInstance(), email.trim(), password);
+      const cred = await signInWithEmailAndPassword(getAuthInstance(), email.trim(), password);
+      if (cred.user.uid !== ADMIN_UID) {
+        await signOut(getAuthInstance());
+        this.error.set('This account does not have back-office access.');
+        return false;
+      }
       return true;
     } catch (e: any) {
       const code = e?.code ?? '';
