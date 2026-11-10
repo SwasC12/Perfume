@@ -1,9 +1,10 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { Component, ElementRef, OnDestroy, ViewChild, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { readBarcodes } from 'zxing-wasm/reader';
 import QRCode from 'qrcode';
 import { ShopAdminService } from '../../shop-admin.service';
+import { SoundManager } from '../../sound/sound-manager';
 import { Order, Product } from '../../models';
 
 @Component({
@@ -13,7 +14,7 @@ import { Order, Product } from '../../models';
   templateUrl: './scanner.component.html',
   styleUrl: './scanner.component.scss',
 })
-export class ScannerComponent implements OnDestroy {
+export class ScannerComponent implements AfterViewInit, OnDestroy {
   private shop = inject(ShopAdminService);
   @ViewChild('video') videoRef?: ElementRef<HTMLVideoElement>;
   @ViewChild('canvas') canvasRef?: ElementRef<HTMLCanvasElement>;
@@ -32,12 +33,20 @@ export class ScannerComponent implements OnDestroy {
   readonly genError = signal<string | null>(null);
 
   readonly torchOn = signal(false);
+  readonly notice = signal('');
+  /** When each code was last accepted, so a repeat is treated as a duplicate. */
+  private acceptedAt = new Map<string, number>();
   private stream: MediaStream | null = null;
   private raf = 0;
   private detector: any = null;
   private busy = false;
   private lastAt = 0;
   private lastFrame = 0;
+
+  /** The page owns the camera: it starts on entry and runs until you leave. */
+  ngAfterViewInit(): void {
+    setTimeout(() => void this.start(), 120);
+  }
 
   async start(): Promise<void> {
     if (this.scanning()) return;
@@ -156,9 +165,17 @@ export class ScannerComponent implements OnDestroy {
     const value = String(raw || '').trim();
     if (!value) return;
     const now = Date.now();
+    // Camera frames re-detect the same symbol constantly — never beep for those.
     if (value === this.lastCode() && now - this.lastAt < 1500) return;
     this.lastCode.set(value);
     this.lastAt = now;
+
+    const seenAt = this.acceptedAt.get(value);
+    if (seenAt && now - seenAt < 10000) {
+      this.notice.set('Already scanned — ' + value);
+      SoundManager.feedback('duplicate');
+      return;
+    }
     this.handle(value);
   }
 
@@ -189,6 +206,16 @@ export class ScannerComponent implements OnDestroy {
         label = 'Order ' + ref + ' (not loaded)';
       }
     }
+    const accepted = !!(this.order() || this.product() || this.batchCode());
+    if (accepted) {
+      this.acceptedAt.set(code, Date.now());
+      this.notice.set(label);
+      SoundManager.feedback('scanSuccess');
+    } else {
+      this.notice.set('Not recognised — ' + code);
+      SoundManager.feedback('scanError');
+    }
+
     this.scanned.update((list) => [{ code, label, at: Date.now() }, ...list].slice(0, 40));
   }
 
@@ -198,6 +225,7 @@ export class ScannerComponent implements OnDestroy {
     try {
       await this.shop.setOrderStatus(order, 'shipped');
       this.order.set({ ...order, status: 'shipped' });
+      SoundManager.feedback('orderDispatched');
     } catch {
       this.error.set('Could not update the order.');
     }

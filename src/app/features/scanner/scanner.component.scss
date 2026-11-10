@@ -1,119 +1,70 @@
-.scanner-view { max-width: 1100px; }
-.scanner-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-.scanner-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; align-items: start; }
-.scan-panel, .gen-panel { padding: 18px; }
-.scan-frame { position: relative; aspect-ratio: 4 / 3; background: #141210; border-radius: 6px; overflow: hidden; display: grid; place-items: center; }
-.scan-frame video { width: 100%; height: 100%; object-fit: cover; }
-.scan-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #f7f4ef; text-align: center; }
-.scan-icon { font-size: 42px; opacity: .7; }
-.scan-idle p { margin: 0; color: #cfc7bb; font-size: 13px; }
-.scan-line { position: absolute; left: 8%; right: 8%; top: 50%; height: 1px; background: rgba(217,199,171,.8); box-shadow: 0 0 14px rgba(217,199,171,.8); animation: scanline 2.4s ease-in-out infinite; }
-@keyframes scanline { 0%,100% { top: 22%; opacity:.4; } 50% { top: 78%; opacity:1; } }
-.scan-last { font-size: 12px; color: var(--ink-dim); word-break: break-all; }
-.scan-result { border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; margin-top: 12px; }
-.result-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.scan-result p { margin: 6px 0 0; font-size: 13px; }
-.scan-list { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
-.scan-list-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.scan-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
-.gen-panel h2 { margin: 0 0 6px; font-size: 20px; }
-.gen-panel label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-dim); margin: 12px 0; }
-.gen-panel input, .gen-panel select { width: 100%; margin-top: 5px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; font: inherit; background: #fffdf9; }
-.qr-preview { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 16px; }
-.qr-preview img { width: 200px; height: 200px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
-@media (max-width: 800px) { .scanner-grid { grid-template-columns: 1fr; } }
 
-/* --- Camera frame: fixed 4:3, video fills it, overlay always centred --- */
+.scanner-view { max-width: 100%; width: 100%; min-width: 0; margin-inline: auto; }
+.scanner-grid { display: block; width: 100%; min-width: 0; }
+.scan-panel, .gen-panel { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 14px; margin: 0; }
+.gen-panel { margin-top: 16px; }
+
+/* Camera box: fills its parent exactly. No max-height (that produced a 299px
+   box offset by 66px), no auto margins — width 100% means flush edges. */
 .scan-frame {
-  position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 58vh;
-  background: #111; border-radius: 16px; overflow: hidden;
-  display: grid; place-items: center;
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  aspect-ratio: 4 / 3;
+  margin: 0 !important;
+  padding: 0 !important;
+  left: auto !important;
+  right: auto !important;
+  transform: none !important;
+  border-radius: 12px;
+  overflow: hidden !important;
+  background: #0B2547;
 }
-.scan-frame video {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; background: #111;
+.scan-frame video, .scan-frame canvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  object-fit: cover !important;
+  object-position: 50% 50% !important;
+  transform: none !important;
+  margin: 0 !important;
+  display: block !important;
 }
-.scan-idle {
-  position: absolute; inset: 0; z-index: 2;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; text-align: center; padding: 20px;
-  background: rgba(0, 0, 0, 0.55); color: #f2f2f7;
-}
-.scan-idle p { margin: 0; font-size: 14px; opacity: 0.85; }
-.scan-icon { font-size: 34px; opacity: 0.7; }
-.scan-line {
-  position: absolute; left: 8%; right: 8%; height: 2px; z-index: 1;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.85);
-  animation: scanline 2.6s ease-in-out infinite;
-}
-@keyframes scanline { 0%, 100% { top: 22%; } 50% { top: 78%; } }
-@media (prefers-reduced-motion: reduce) { .scan-line { animation: none; top: 50%; } }
-@media (max-width: 640px) { .scan-frame { aspect-ratio: 3 / 4; max-height: 64vh; } }
 
-/* ========== Pro scanner HUD (Zebra-style) ========== */
-.scan-frame { background: #0b0b0c; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
-
-/* corner brackets, drawn with 4 <i> elements */
-.scan-corners i {
-  position: absolute; width: 34px; height: 34px; z-index: 3;
-  border: 3px solid rgba(255, 255, 255, 0.9);
-  border-radius: 6px;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+/* ---------- Pretty, light scanner card ---------- */
+.scanner-head { margin-bottom: 12px; }
+.scan-panel {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(18, 59, 112, 0.05);
+  padding: 14px;
 }
-.scan-corners i:nth-child(1) { top: 8%; left: 8%; border-right: 0; border-bottom: 0; }
-.scan-corners i:nth-child(2) { top: 8%; right: 8%; border-left: 0; border-bottom: 0; }
-.scan-corners i:nth-child(3) { bottom: 8%; left: 8%; border-right: 0; border-top: 0; }
-.scan-corners i:nth-child(4) { bottom: 8%; right: 8%; border-left: 0; border-top: 0; }
-
-/* top HUD row */
-.scan-hud {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 4;
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; padding: 10px 12px;
-}
+.scan-frame { background: #E4F0FC; }
+.scan-idle { background: #E4F0FC; color: #123B70; }
+.scan-idle p { color: #123B70; font-weight: 600; font-size: 13px; }
+.scan-icon { color: #2878C7; font-size: 40px; opacity: 1; }
 .scan-chip {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 11px; border-radius: 999px;
-  background: rgba(12, 12, 13, 0.62);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  color: #f5f5f7; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 59, 112, 0.72);
+  border-color: rgba(255, 255, 255, 0.25);
 }
-.scan-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #34c759;
-  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.7);
-  animation: scan-pulse 1.8s ease-out infinite;
-}
-@keyframes scan-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.55); }
-  70% { box-shadow: 0 0 0 9px rgba(52, 199, 89, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
-}
-.scan-torch {
-  width: 42px; height: 42px; border-radius: 50%;
-  display: grid; place-items: center; cursor: pointer;
-  background: rgba(12, 12, 13, 0.62); color: #f5f5f7;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  transition: background 0.18s, transform 0.12s, color 0.18s;
-}
-.scan-torch:active { transform: scale(0.94); }
-.scan-torch.on { background: #ffd60a; color: #1c1c1e; border-color: transparent; }
-.torch-glyph { font-size: 18px; line-height: 1; }
-
-/* laser */
+.scan-torch { background: rgba(18, 59, 112, 0.72); border-color: rgba(255, 255, 255, 0.25); }
+.scan-corners i { border-color: #FFFFFF; filter: drop-shadow(0 0 6px rgba(18, 59, 112, 0.55)); }
 .scan-line {
-  left: 8%; right: 8%; height: 2px;
-  background: linear-gradient(90deg, transparent, #ff453a 18%, #ff453a 82%, transparent);
-  box-shadow: 0 0 16px 2px rgba(255, 69, 58, 0.55);
+  background: linear-gradient(90deg, transparent, #2878C7 18%, #2878C7 82%, transparent);
+  box-shadow: 0 0 14px 2px rgba(40, 120, 199, 0.55);
 }
-.scan-line.idle { display: none; }
-
-/* result sheet — iOS-style card */
 .scan-result {
-  background: #ffffff; border-radius: 18px; padding: 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 28px rgba(0, 0, 0, 0.08);
-  margin-top: 14px;
+  background: #F7FAFF;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  box-shadow: none;
 }
-.scan-last { font-size: 13px; color: var(--ink-dim); margin: 10px 0 0; }

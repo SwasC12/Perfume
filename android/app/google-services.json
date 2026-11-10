@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "323158526612",
+    "firebase_url": "https://perfume-3b075-default-rtdb.firebaseio.com",
+    "project_id": "perfume-3b075",
+    "storage_bucket": "perfume-3b075.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:323158526612:android:e5004f2a50a0c77eb44281",
+        "android_client_info": {
+          "package_name": "co.za.kauafragrances.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQm12xvKhm4KToVgEwMwE0Z1_w5W31YN0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

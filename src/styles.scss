@@ -1,20 +1,21 @@
 :root {
-  --bg: #f6f1ea;
-  --bg2: #efe6d9;
-  --surface: #fffdfa;
-  --ink: #2a2320;
-  --ink-dim: #8a7d70;
-  --line: #e7ddcf;
-  --accent: #a9603e; /* warm amber-rose */
-  --accent-ink: #fff;
-  --accent-soft: #f2e2d6;
-  --ok: #3f8f5e;
-  --ok-soft: #e2f2e7;
-  --warn: #b4622a;
-  --warn-soft: #f7e5d4;
-  --danger: #c0463f;
-  --shadow: 0 6px 22px rgba(75, 52, 34, 0.1);
-  --radius: 16px;
+  /* Kaua Tracker palette — professional inventory navy/blue */
+  --bg: #F1F6FC;
+  --bg2: #E4F0FC;
+  --surface: #FFFFFF;
+  --ink: #172B45;
+  --ink-dim: #73839A;
+  --line: #DCE6F1;
+  --accent: #123B70;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E4F0FC;
+  --ok: #239B69;
+  --ok-soft: #E8F6EF;
+  --warn: #E6A23C;
+  --warn-soft: #FDF3E2;
+  --danger: #D9534F;
+  --shadow: 0 1px 2px rgba(18, 59, 112, 0.06), 0 8px 24px rgba(18, 59, 112, 0.06);
+  --radius: 14px;
 }
 
 * { box-sizing: border-box; }
@@ -597,7 +598,7 @@ button.dash-row:hover { color: var(--accent); }
 .nav-item.active { background: var(--accent-soft); color: var(--accent-dark); }
 .nav-item .count { margin-left: auto; background: rgba(0,0,0,0.07); font-size: 12px; padding: 1px 8px; border-radius: 999px; font-weight: 700; }
 .nav-item .count.alert { margin-left: 6px; background: var(--danger); color: #fff; }
-.nav-item.active .count { background: rgba(169,96,62,0.18); }
+.nav-item.active .count { background: rgba(18,59,112,0.18); }
 .side-foot { padding: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .side-action { display: flex; align-items: center; gap: 9px; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink); }
 .side-action:hover { background: var(--bg); }
@@ -752,12 +753,12 @@ button.dash-row:hover { color: var(--accent); }
 :root {
   --bg: #f6f3ee;
   --bg2: #efe9df;
-  --surface: #fffdf9;
+  --surface: #FFFFFF;
   --ink: #1c1916;
   --ink-dim: #6f675d;
   --line: #e4ded4;
   --accent: #8c6b3f;
-  --accent-ink: #fffdf9;
+  --accent-ink: #FFFFFF;
   --accent-soft: #efe4d3;
   --accent-dark: #5f4829;
   --shadow: 0 8px 24px rgba(40, 32, 24, 0.06);
@@ -819,7 +820,7 @@ h1, h2, h3, .brand, .editor-title, .panel-title, .inv-brand {
 .content-editor input, .content-editor textarea, .expense-form input, .expense-form select,
 .pos-field input, .promo-row input, .img-url {
   border-radius: 2px;
-  background: #fffdf9;
+  background: #FFFFFF;
 }
 .search:focus, .form-select:focus, .modal input:focus, .modal textarea:focus,
 .content-editor input:focus, .content-editor textarea:focus, .img-url:focus {
@@ -832,7 +833,7 @@ h1, h2, h3, .brand, .editor-title, .panel-title, .inv-brand {
 .tracking-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .tracking-row input {
   flex: 1 1 180px; border: 1px solid var(--line); border-radius: 2px;
-  padding: 9px 11px; font-size: 13px; font-family: inherit; background: #fffdf9; color: var(--ink);
+  padding: 9px 11px; font-size: 13px; font-family: inherit; background: #FFFFFF; color: var(--ink);
 }
 .tracking-row .btn { flex: none; }
 .linkbtn { background: none; border: 0; padding: 0; margin: -4px 0 10px; color: var(--accent); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }

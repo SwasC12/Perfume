@@ -2,11 +2,8 @@
   <div class="scanner-head">
     <div>
       <h1 class="page-title">Scan &amp; QR</h1>
-      <p class="view-intro">Scan order or batch QR codes, check details, and mark parcels as shipped. Generate codes for orders, batches and products.</p>
     </div>
-    @if (scanning()) {
-      <button class="btn" (click)="stop()">Stop camera</button>
-    }
+
   </div>
 
   <div class="scanner-grid">
@@ -17,14 +14,13 @@
         @if (!scanning()) {
           <div class="scan-idle">
             <span class="scan-icon">▦</span>
-            <p>Camera is off</p>
-            <button class="btn primary" (click)="start()">Start scanning</button>
+            <p>{{ error() ? 'Camera unavailable' : 'Starting camera…' }}</p>
           </div>
         }
         @if (scanning()) {
           <div class="scan-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
           <div class="scan-hud">
-            <span class="scan-chip"><span class="scan-dot"></span> QR · Barcode · Multi-symbology</span>
+            <span class="scan-chip"><span class="scan-dot"></span> Scanning</span>
             <button type="button" class="scan-torch" [class.on]="torchOn()" (click)="toggleTorch()" title="Torch">
               <span class="torch-glyph">☀</span>
             </button>
@@ -33,7 +29,7 @@
         <div class="scan-line" [class.idle]="!scanning()"></div>
       </div>
       @if (error()) { <p class="form-error">{{ error() }}</p> }
-      @if (lastCode()) { <p class="scan-last">Last scan: <strong>{{ lastCode() }}</strong></p> }
+      @if (notice()) { <p class="scan-notice">{{ notice() }}</p> }
 
       @if (order(); as o) {
         <div class="scan-result">

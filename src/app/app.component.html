@@ -4,7 +4,7 @@
   <aside class="sidebar">
     <div class="side-brand">
       <span class="logo"><app-icon name="droplet" [size]="22" /></span>
-      <span class="side-title">Oil Tracker</span>
+      <span class="side-title">Kaua Tracker</span>
     </div>
 
     <nav class="side-nav">
@@ -86,6 +86,26 @@
       <button class="hamburger" (click)="menuOpen.set(!menuOpen())" aria-label="Menu"><app-icon name="menu" [size]="22" /></button>
       <span class="mobile-title">{{ tabTitle() }}</span>
     </header>
+
+    <!-- Phone navigation: always reachable, no hidden drawer required -->
+    <nav class="mobile-tabs">
+      <button class="mobile-tab" [class.active]="tab() === 'dashboard'" (click)="go('dashboard')">
+        <app-icon name="grid" [size]="20" /><span>Home</span>
+      </button>
+      <button class="mobile-tab" [class.active]="tab() === 'orders'" (click)="go('orders')">
+        <app-icon name="receipt" [size]="20" /><span>Orders</span>
+        @if (shopSvc.pendingOrderCount() > 0) { <i class="mobile-dot"></i> }
+      </button>
+      <button class="mobile-tab" [class.active]="tab() === 'scanner'" (click)="go('scanner')">
+        <app-icon name="qr" [size]="20" /><span>Scan</span>
+      </button>
+      <button class="mobile-tab" [class.active]="tab() === 'products'" (click)="go('products')">
+        <app-icon name="package" [size]="20" /><span>Products</span>
+      </button>
+      <button class="mobile-tab" (click)="menuOpen.set(true)">
+        <app-icon name="menu" [size]="20" /><span>More</span>
+      </button>
+    </nav>
 
     <div class="content">
 
@@ -578,6 +598,36 @@
           <button class="btn primary" (click)="openAdminLogin()"><app-icon name="lock" [size]="16" /> Sign in</button>
         </div>
       } @else {
+        <div class="kpis inv-kpis">
+          <div class="kpi">
+            <span class="kpi-icon"><app-icon name="package" [size]="18" /></span>
+            <span class="kpi-label">Products</span>
+            <span class="kpi-value">{{ inventoryStats().products }}</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-icon"><app-icon name="grid" [size]="18" /></span>
+            <span class="kpi-label">Units in stock</span>
+            <span class="kpi-value">{{ inventoryStats().units }}</span>
+          </div>
+          <div class="kpi" [class.warn]="inventoryStats().low > 0">
+            <span class="kpi-icon"><app-icon name="chart" [size]="18" /></span>
+            <span class="kpi-label">Low stock</span>
+            <span class="kpi-value">{{ inventoryStats().low }}</span>
+          </div>
+          <div class="kpi" [class.danger]="inventoryStats().out > 0">
+            <span class="kpi-icon"><app-icon name="x" [size]="18" /></span>
+            <span class="kpi-label">Out of stock</span>
+            <span class="kpi-value">{{ inventoryStats().out }}</span>
+          </div>
+        </div>
+
+        <div class="quick-actions">
+          <button class="qa" (click)="go('scanner')"><app-icon name="qr" [size]="20" /><span>Scan</span></button>
+          <button class="qa" (click)="go('orders')"><app-icon name="receipt" [size]="20" /><span>Orders</span></button>
+          <button class="qa" (click)="go('products')"><app-icon name="package" [size]="20" /><span>Products</span></button>
+          <button class="qa" (click)="go('pos')"><app-icon name="tag" [size]="20" /><span>Point of sale</span></button>
+        </div>
+
         <div class="kpis">
           <div class="kpi"><span class="kpi-label">Revenue this month</span><span class="kpi-value">{{ price(kpiRevenueMonth()) }}</span></div>
           <div class="kpi"><span class="kpi-label">Orders this month</span><span class="kpi-value">{{ kpiOrdersMonth() }}</span></div>
@@ -847,6 +897,52 @@
       } @else {
         <div class="content-editor">
           <div class="editor-card">
+            <h3 class="editor-title">Sound &amp; vibration</h3>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().master" (change)="setSoundPref('master', $any($event.target).checked)" />
+              Master sound
+            </label>
+            <label>Volume <input type="range" min="0" max="1" step="0.05" [value]="soundPrefs().volume" (input)="setSoundPref('volume', +$any($event.target).value)" /></label>
+
+            <div class="sound-grid">
+              @for (c of soundCues; track c.key) {
+                <div class="sound-row">
+                  <label class="chk inline2">
+                    <input type="checkbox" [checked]="soundPrefs().cues[c.key]" (change)="setSoundCue(c.key, $any($event.target).checked)" />
+                    {{ c.label }}
+                  </label>
+                  <button type="button" class="mini-btn" (click)="testSound(c.key)">Test</button>
+                </div>
+              }
+            </div>
+
+            <h4 class="editor-sub">Vibration</h4>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().vibration" (change)="setSoundPref('vibration', $any($event.target).checked)" />
+              Master vibration
+            </label>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().vibrateScanner" (change)="setSoundPref('vibrateScanner', $any($event.target).checked)" />
+              Scanner vibration
+            </label>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().vibrateNotifications" (change)="setSoundPref('vibrateNotifications', $any($event.target).checked)" />
+              Notification vibration
+            </label>
+            <button type="button" class="mini-btn" (click)="testVibration()">Test vibration</button>
+
+            <h4 class="editor-sub">Scanning</h4>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().continuousScan" (change)="setSoundPref('continuousScan', $any($event.target).checked)" />
+              Continuous scanning (stay open after each scan)
+            </label>
+            <label class="chk inline2">
+              <input type="checkbox" [checked]="soundPrefs().buttonSound" (change)="setSoundPref('buttonSound', $any($event.target).checked)" />
+              Button tap sound
+            </label>
+          </div>
+
+          <div class="editor-card">
             <h3 class="editor-title">Store status</h3>
             <label class="chk inline2"><input type="checkbox" [(ngModel)]="settingsForm.storeOpen" name="sOpen" /> Store open (accepting orders)</label>
             <label>Closed message (shown when store is off)
@@ -933,15 +1029,22 @@
             } @else {
               <div class="pos-grid">
                 @for (p of posProducts(); track p.id) {
-                  <button class="pos-prod" (click)="posAdd(p)">
-                    <div class="pos-prod-thumb">
-                      <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
-                    </div>
-                    <span class="pos-prod-name">{{ p.name }}</span>
-                    <span class="pos-prod-price">@if (hasMultipleSizes(p)) { <span class="dim">From </span> }{{ price(startingPrice(p)) }}</span>
-                  </button>
-                }
-              </div>
+                  <div class="pos-cell">
+                    <button class="pos-prod" (click)="posAdd(p)">
+                      <div class="pos-prod-thumb">
+                        <img [src]="prodImg(p)" [alt]="p.name" loading="lazy" (error)="onImgError($event)" />
+                      </div>
+                      <span class="pos-prod-name">{{ p.name }}</span>
+                      <span class="pos-prod-price">@if (hasMultipleSizes(p)) { <span class="dim">From </span> }{{ price(startingPrice(p)) }}</span>
+                    </button>
+                    @if (hasMultipleSizes(p)) {
+                      <div class="pos-sizes">
+                        @for (s of posSizes(p); track s.key) {
+                          <button type="button" class="pos-size" (click)="posAdd(p, s.key)">{{ s.label }}</button>
+                        }
+                      </div>
+                    }
+                  </div>
             }
           </div>
 
@@ -1007,6 +1110,16 @@
             }
           </aside>
         </div>
+
+        @if (posTotal() > 0) {
+          <div class="pos-bar">
+            <div class="pos-bar-total">
+              <span>{{ posPayment() }} · total</span>
+              <strong>{{ price(posTotal()) }}</strong>
+            </div>
+            <button class="btn primary" (click)="posCheckout()">Charge</button>
+          </div>
+        }
 
         <!-- Market cash-up -->
         <div class="panel cashup">

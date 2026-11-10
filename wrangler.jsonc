@@ -1,0 +1,17 @@
+{
+  // Back office — Worker + static assets on your own domain.
+  // run_worker_first is essential: without it Cloudflare serves the assets
+  // directly and the password gate is bypassed.
+  "name": "kf-admin",
+  "compatibility_date": "2025-09-18",
+  "main": "worker/admin.js",
+  "assets": {
+    "directory": "./dist/perfume-app/browser",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "routes": [
+    { "pattern": "admin.kauafragrances.co.za", "custom_domain": true }
+  ]
+}

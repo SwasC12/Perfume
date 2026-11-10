@@ -16,6 +16,9 @@ import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { FULFIL_STAGES, FulfilStage } from './models';
 import { discountError, computeDiscount, discountSummary, DiscountLine } from './discount-util';
+import { Cue, SoundManager, SoundPrefs } from './sound/sound-manager';
+import { initNotifications, notify } from './notifications';
+import { registerPush } from './push';
 import { productImage, isCustomImage, setPlaceholderOverrides, placeholderFor } from './product-image';
 import { Oil, RumiProduct, WishlistItem, Product, Order, OrderItem, OrderStatus, SiteContent, Banner, StoreSettings, CustomerProfile, Discount, Expense, EXPENSE_CATEGORIES, Review, PRODUCT_SIZE_KEYS, PRODUCT_SIZE_LABELS, ProductSize, ProductSizeKey, fromPrice, sizeOptions, sizeEffectivePrice, sizeOnSale, sizeAvailable } from './models';
 
@@ -401,6 +404,15 @@ export class AppComponent {
       }
     });
 
+    // Native Android notification channels (sounds live in res/raw).
+    void initNotifications();
+    void registerPush();
+
+    // Mobile browsers/Capacitor need a gesture before audio can start.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerdown', () => void SoundManager.unlock(), { once: true });
+    }
+
     // Offline POS queue: reflect any pending sales, and flush when back online.
     this.pendingSyncCount.set(this.readQueue().length);
     window.addEventListener('online', () => this.flushPosQueue());
@@ -503,8 +515,13 @@ export class AppComponent {
   effPrice(p: Product): number {
     return p.salePrice != null && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
   }
-  posAdd(p: Product): void {
-    const sizeKey = sizeOptions(p)[0]?.key;
+  /** Sizes available for a POS tile (30/50/100 ml). */
+  posSizes(p: Product): { key: ProductSizeKey; label: string }[] {
+    return sizeOptions(p).map((o) => ({ key: o.key, label: o.size.size }));
+  }
+
+  posAdd(p: Product, chosen?: ProductSizeKey): void {
+    const sizeKey = chosen ?? sizeOptions(p)[0]?.key;
     this.posCart.update((list) => {
       const ex = list.find((l) => l.product.id === p.id && l.sizeKey === sizeKey);
       return ex
@@ -844,7 +861,63 @@ export class AppComponent {
     ).length;
   }
 
+  // ---------- Sound & vibration ----------
+  readonly soundPrefs = signal<SoundPrefs>(SoundManager.settings);
+  readonly soundCues: { key: Cue; label: string }[] = [
+    { key: 'scanSuccess', label: 'Successful scan' },
+    { key: 'scanError', label: 'Failed / unknown scan' },
+    { key: 'duplicate', label: 'Duplicate scan' },
+    { key: 'stockReceived', label: 'Stock received' },
+    { key: 'orderCompleted', label: 'Order completed' },
+    { key: 'orderDispatched', label: 'Order dispatched' },
+    { key: 'lowStock', label: 'Low stock warning' },
+  ];
+
+  setSoundPref<K extends keyof SoundPrefs>(key: K, value: SoundPrefs[K]): void {
+    SoundManager.set(key, value);
+    this.soundPrefs.set({ ...SoundManager.settings });
+  }
+
+  setSoundCue(cue: Cue, on: boolean): void {
+    SoundManager.setCue(cue, on);
+    this.soundPrefs.set({ ...SoundManager.settings });
+  }
+
+  testSound(cue: Cue): void {
+    SoundManager.feedback(cue);
+  }
+
+  testVibration(): void {
+    SoundManager.vibrate('scanSuccess');
+  }
+
   // ---------- Dashboard ----------
+  /** Units on hand for one product (sum of size stock, else flat stock). */
+  private unitCount(p: Product): number {
+    const sizes = (p as { sizes?: Record<string, { stockQty?: number | null }> }).sizes;
+    if (sizes) {
+      return Object.keys(sizes).reduce((n, k) => {
+        const s = sizes[k];
+        return n + (s && s.stockQty != null ? Number(s.stockQty) : 0);
+      }, 0);
+    }
+    const flat = (p as { stockQty?: number | null }).stockQty;
+    return flat != null ? Number(flat) : 0;
+  }
+
+  readonly inventoryStats = computed(() => {
+    const list = this.shopSvc.products().filter((p) => p.active !== false);
+    let units = 0;
+    let low = 0;
+    let out = 0;
+    for (const p of list) {
+      const u = this.unitCount(p);
+      units += u;
+      if (u <= 0) out++;
+      else if (u <= 5) low++;
+    }
+    return { products: list.length, units, low, out };
+  });
   private thisMonth(o: Order): boolean {
     const d = new Date(o.createdAt); const n = new Date();
     return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
