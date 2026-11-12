@@ -1,0 +1,146 @@
+<div class="page narrow">
+  <header class="page-head compact">
+    <div>
+      <h1 class="page-title">Storefront</h1>
+      <p class="page-sub">What shoppers see on the home page. Changes go live when you save.</p>
+    </div>
+  </header>
+
+  @if (form(); as f) {
+    <!-- Announcement -->
+    <section class="card card-pad form">
+      <div class="row between">
+        <h2 class="section-title mt-0">Announcement bar</h2>
+        <label class="switch"><input type="checkbox" [(ngModel)]="f.announcementActive" aria-label="Show announcement bar" /><span></span></label>
+      </div>
+      <div class="field">
+        <label for="sf-ann">Text</label>
+        <input id="sf-ann" type="text" [(ngModel)]="f.announcementText" placeholder="e.g. Free delivery on orders over R500" />
+        <span class="hint">{{ f.announcementActive ? 'Showing at the top of every page.' : 'Hidden. Turn on to show it.' }}</span>
+      </div>
+    </section>
+
+    <!-- Hero -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Hero banner</h2>
+      <div class="hero-prev" [class.empty]="!f.heroImageUrl">
+        @if (f.heroImageUrl) {
+          <img [src]="f.heroImageUrl" alt="Hero preview" width="800" height="300" loading="lazy" decoding="async" />
+        } @else {
+          <app-icon name="image" [size]="28" />
+        }
+      </div>
+      <div class="row">
+        <label class="btn btn-sm" [class.disabled]="uploading() === 'hero'">
+          <app-icon name="upload" [size]="15" /> {{ uploading() === 'hero' ? 'Uploading…' : (f.heroImageUrl ? 'Replace image' : 'Upload image') }}
+          <input type="file" accept="image/*" hidden (change)="uploadHero($event)" />
+        </label>
+        @if (f.heroImageUrl) { <button type="button" class="btn btn-sm btn-ghost" (click)="f.heroImageUrl = ''">Remove</button> }
+      </div>
+      <div class="field">
+        <label for="sf-himg">Background image URL</label>
+        <input id="sf-himg" type="url" [(ngModel)]="f.heroImageUrl" placeholder="https://… (optional)" />
+      </div>
+      <div class="field">
+        <label for="sf-ht">Title</label>
+        <input id="sf-ht" type="text" [(ngModel)]="f.heroTitle" placeholder="KAUĀ FRAGRANCES" />
+      </div>
+      <div class="field">
+        <label for="sf-hs">Subtitle / tagline</label>
+        <input id="sf-hs" type="text" [(ngModel)]="f.heroSubtitle" placeholder="&quot;one spray to last the day&quot;" />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="sf-hc">Button text</label>
+          <input id="sf-hc" type="text" [(ngModel)]="f.heroCtaText" placeholder="Shop now" />
+        </div>
+        <div class="field">
+          <label for="sf-hl">Button link</label>
+          <input id="sf-hl" type="text" [(ngModel)]="f.heroCtaLink" placeholder="#shop" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Featured -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Featured section</h2>
+      <div class="field">
+        <label for="sf-feat">Heading</label>
+        <input id="sf-feat" type="text" [(ngModel)]="f.featuredTitle" placeholder="Featured" />
+        <span class="hint">Mark products as “Featured” on the <a routerLink="/products">product page</a> to show them here.</span>
+      </div>
+    </section>
+
+    <!-- Banners -->
+    <section class="stack">
+      <div class="row between">
+        <div>
+          <h2 class="section-title mt-0">Promo banners</h2>
+          <p class="small muted">Rotating slides on the home page.</p>
+        </div>
+        <button type="button" class="btn btn-soft btn-sm" (click)="addBanner()"><app-icon name="plus" [size]="15" /> Add banner</button>
+      </div>
+
+      @for (b of f.banners; track b.id; let i = $index) {
+        <div class="card card-pad form">
+          <div class="row between">
+            <h3 class="section-title mt-0">Banner {{ i + 1 }}</h3>
+            <div class="row">
+              <label class="switch"><input type="checkbox" [(ngModel)]="b.active" /><span></span> Active</label>
+              <button type="button" class="btn btn-sm btn-ghost btn-icon" (click)="removeBanner(b)" aria-label="Remove banner"><app-icon name="trash" [size]="16" /></button>
+            </div>
+          </div>
+          <div class="banner-img">
+            <div class="hero-prev sm" [class.empty]="!b.imageUrl">
+              @if (b.imageUrl) {
+                <img [src]="b.imageUrl" [alt]="b.title || 'Banner preview'" width="320" height="120" loading="lazy" decoding="async" />
+              } @else {
+                <app-icon name="image" [size]="22" />
+              }
+            </div>
+            <label class="btn btn-sm" [class.disabled]="uploading() === b.id">
+              <app-icon name="upload" [size]="15" /> {{ uploading() === b.id ? 'Uploading…' : (b.imageUrl ? 'Replace' : 'Upload') }}
+              <input type="file" accept="image/*" hidden (change)="uploadBanner(b, $event)" />
+            </label>
+          </div>
+          <div class="field">
+            <label [for]="b.id + '-i'">Image URL</label>
+            <input [id]="b.id + '-i'" type="url" [(ngModel)]="b.imageUrl" placeholder="https://…" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label [for]="b.id + '-t'">Title</label>
+              <input [id]="b.id + '-t'" type="text" [(ngModel)]="b.title" />
+            </div>
+            <div class="field">
+              <label [for]="b.id + '-s'">Subtitle</label>
+              <input [id]="b.id + '-s'" type="text" [(ngModel)]="b.subtitle" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label [for]="b.id + '-c'">Button text</label>
+              <input [id]="b.id + '-c'" type="text" [(ngModel)]="b.ctaText" />
+            </div>
+            <div class="field">
+              <label [for]="b.id + '-l'">Button link</label>
+              <input [id]="b.id + '-l'" type="text" [(ngModel)]="b.ctaLink" />
+            </div>
+          </div>
+        </div>
+      } @empty {
+        <div class="card list-empty">No banners yet. Add one to create a rotating slide on the home page.</div>
+      }
+    </section>
+
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving() || !!uploading()">
+        {{ saving() ? 'Saving…' : 'Save storefront' }}
+      </button>
+    </div>
+  } @else {
+    <div class="card card-pad stack">
+      <span class="skeleton sk"></span><span class="skeleton sk"></span><span class="skeleton sk short"></span>
+    </div>
+  }
+</div>

@@ -1,0 +1,210 @@
+<div class="page">
+  <header class="page-head compact">
+    <div>
+      <h1 class="page-title">Dashboard</h1>
+      <p class="page-sub">{{ today }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn" routerLink="/scan"><app-icon name="qr" [size]="16" /> Scan</a>
+      <a class="btn btn-primary" routerLink="/pos"><app-icon name="plus" [size]="16" /> New sale</a>
+    </div>
+  </header>
+
+  <!-- ===================== Needs action today ===================== -->
+  <h2 class="section-title muted">Needs action</h2>
+  <div class="grid-3 actions">
+    <a class="card stat action" routerLink="/orders" [class.hot]="kpiPaid() > 0">
+      <span class="stat-label"><app-icon name="package" [size]="15" /> Paid, to pack</span>
+      <span class="stat-value">{{ kpiPaid() }}</span>
+      <span class="stat-note">{{ kpiPaid() ? 'Work through the fulfilment steps' : 'Nothing to pack' }}</span>
+    </a>
+    <a class="card stat action" routerLink="/orders" [class.warm]="kpiPending() > 0">
+      <span class="stat-label"><app-icon name="wallet" [size]="15" /> Awaiting payment</span>
+      <span class="stat-value">{{ kpiPending() }}</span>
+      <span class="stat-note">{{ kpiPending() ? 'Mark paid when the money is in' : 'All paid up' }}</span>
+    </a>
+    <a class="card stat action" routerLink="/products" [class.warm]="lowStockItems().length > 0">
+      <span class="stat-label"><app-icon name="alert" [size]="15" /> Low or out of stock</span>
+      <span class="stat-value">{{ lowStockItems().length }}</span>
+      <span class="stat-note">
+        @if (inventoryStats().out) { <span class="text-danger">{{ inventoryStats().out }} sold out</span> · }
+        {{ inventoryStats().low }} low (5 or fewer)
+      </span>
+    </a>
+  </div>
+
+  <div class="grid-2">
+    <section class="card">
+      <div class="card-head">
+        <h3>To pack</h3>
+        @if (toPack().length) { <a class="small" routerLink="/orders">All orders</a> }
+      </div>
+      @if (loading()) {
+        <div class="card-body stack-sm"><div class="skeleton" style="height:16px"></div><div class="skeleton" style="height:16px;width:70%"></div></div>
+      } @else if (toPack().length === 0) {
+        <div class="list-empty"><app-icon name="check" [size]="18" /> All paid orders are packed.</div>
+      } @else {
+        <div class="flat-list">
+          @for (o of toPack().slice(0, 6); track o.id) {
+            <a class="list-item" [routerLink]="['/orders', o.id]">
+              <div class="li-main">
+                <span class="li-title"><span class="mono">{{ o.reference }}</span>@if (o.stage && o.stage !== 'placed') { <span class="pill plain">{{ o.stage }}</span> }</span>
+                <span class="li-sub">{{ o.customer.name || 'Walk-in' }} · {{ items(o) }} item{{ items(o) === 1 ? '' : 's' }} · {{ o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</span>
+              </div>
+              <div class="li-end"><span class="num">{{ o.total | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span><span class="tiny muted">{{ ago(o.paidAt || o.createdAt) }}</span></div>
+            </a>
+          }
+        </div>
+        @if (toPack().length > 6) { <div class="card-foot"><a class="small" routerLink="/orders">+{{ toPack().length - 6 }} more</a></div> }
+      }
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Low stock</h3>
+        @if (lowStockItems().length) { <a class="small" routerLink="/products">Products</a> }
+      </div>
+      @if (shop.loadingProducts() && !shop.products().length) {
+        <div class="card-body stack-sm"><div class="skeleton" style="height:16px"></div><div class="skeleton" style="height:16px;width:70%"></div></div>
+      } @else if (lowStockItems().length === 0) {
+        <div class="list-empty"><app-icon name="check" [size]="18" /> Stock levels look good.</div>
+      } @else {
+        <div class="flat-list">
+          @for (x of lowStockItems().slice(0, 6); track x.product.id) {
+            <a class="list-item" [routerLink]="['/products', x.product.id]">
+              <div class="li-main">
+                <span class="li-title">{{ x.product.name }}</span>
+                @if (x.product.inspiredBy) { <span class="li-sub">{{ x.product.inspiredBy }}</span> }
+              </div>
+              <div class="li-end">
+                @if (x.units <= 0) { <span class="pill danger">Sold out</span> } @else { <span class="pill warn">{{ x.units }} left</span> }
+              </div>
+            </a>
+          }
+        </div>
+        @if (lowStockItems().length > 6) { <div class="card-foot"><a class="small" routerLink="/products">+{{ lowStockItems().length - 6 }} more</a></div> }
+      }
+    </section>
+  </div>
+
+  <!-- ===================== Sales ===================== -->
+  <h2 class="section-title muted">This month</h2>
+  <div class="grid-4">
+    <div class="card stat"><span class="stat-label">Revenue this month</span><span class="stat-value">{{ kpiRevenueMonth() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span></div>
+    <div class="card stat"><span class="stat-label">Orders this month</span><span class="stat-value">{{ kpiOrdersMonth() }}</span></div>
+    <div class="card stat"><span class="stat-label">Gross profit (all time)</span><span class="stat-value">{{ kpiGrossProfit() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span><span class="stat-note">Revenue {{ kpiRevenue() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span></div>
+    <div class="card stat">
+      <span class="stat-label">Net profit</span>
+      <span class="stat-value" [class.text-danger]="kpiNetProfit() < 0">{{ kpiNetProfit() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span>
+      <span class="stat-note">After {{ expensesTotal() | currency:'ZAR':'symbol-narrow':'1.0-0' }} expenses</span>
+    </div>
+  </div>
+
+  <div class="split">
+    <section class="card">
+      <div class="card-head">
+        <h3>Revenue · last 14 days</h3>
+        <span class="small muted num">{{ revenue14() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="chart" role="img" aria-label="Revenue for the last 14 days">
+          @for (d of revenueSeries(); track d.label) {
+            <div class="col" [class.today]="d.today" [title]="d.label + ': R ' + d.total.toFixed(0)">
+              <div class="track"><i [style.height.%]="d.total === 0 ? 0 : (d.total / revenueMax() * 100)"></i></div>
+              <span class="lbl">{{ d.label }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><h3>Sales by channel</h3></div>
+        <div class="card-body stack">
+          @if (channelSplit().total > 0) {
+            <div class="split-bar" aria-hidden="true">
+              <i class="online" [style.width.%]="pct(channelSplit().online, channelSplit().total)"></i>
+              <i class="pos" [style.width.%]="pct(channelSplit().pos, channelSplit().total)"></i>
+            </div>
+            <div class="totals">
+              <div><span><i class="sw online"></i> Online · {{ pct(channelSplit().online, channelSplit().total) }}%</span><span class="num bold">{{ channelSplit().online | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span></div>
+              <div><span><i class="sw pos"></i> Point of sale · {{ pct(channelSplit().pos, channelSplit().total) }}%</span><span class="num bold">{{ channelSplit().pos | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span></div>
+            </div>
+          } @else {
+            <p class="small muted">No sales yet.</p>
+          }
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h3>Inventory</h3></div>
+        <div class="card-body">
+          <dl class="kv">
+            <dt>Products</dt><dd class="num">{{ inventoryStats().products }}</dd>
+            <dt>Units in stock</dt><dd class="num">{{ inventoryStats().units }}</dd>
+            <dt>Stock value (cost)</dt><dd class="num">{{ inventoryCostValue() | currency:'ZAR':'symbol-narrow':'1.0-0' }}</dd>
+          </dl>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===================== Lists ===================== -->
+  <div class="grid-3">
+    <section class="card">
+      <div class="card-head"><h3>Recent orders</h3><a class="small" routerLink="/orders">View all</a></div>
+      @if (recentOrders().length === 0) {
+        <div class="list-empty">No orders yet.</div>
+      } @else {
+        <div class="flat-list">
+          @for (o of recentOrders(); track o.id) {
+            <a class="list-item" [routerLink]="['/orders', o.id]">
+              <div class="li-main">
+                <span class="li-title"><span class="mono">{{ o.reference }}</span></span>
+                <span class="li-sub">{{ o.customer.name || 'Walk-in' }} · {{ ago(o.createdAt) }}</span>
+              </div>
+              <div class="li-end">
+                <span class="num">{{ o.total | currency:'ZAR':'symbol-narrow':'1.0-0' }}</span>
+                <span class="pill" [attr.data-status]="o.status">{{ o.status }}</span>
+              </div>
+            </a>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h3>Top sellers</h3></div>
+      @if (topProducts().length === 0) {
+        <div class="list-empty">No sales yet.</div>
+      } @else {
+        <div class="card-body stack">
+          @for (t of topProducts(); track t.id) {
+            <a class="top" [routerLink]="['/products', t.id]">
+              <div class="row between nowrap"><span class="ellipsis">{{ t.name }}</span><span class="small muted num">{{ t.qty }} sold</span></div>
+              <div class="bar"><i [style.width.%]="t.qty / topMax() * 100"></i></div>
+            </a>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h3>Reorder / what to mix</h3></div>
+      @if (reorderList().length === 0) {
+        <div class="list-empty">Nothing running low (5 or fewer in stock shows here).</div>
+      } @else {
+        <div class="flat-list">
+          @for (r of reorderList().slice(0, 8); track r.product.id) {
+            <a class="list-item" [routerLink]="['/products', r.product.id]">
+              <div class="li-main"><span class="li-title">{{ r.product.name }}</span><span class="li-sub">{{ r.sold }} sold</span></div>
+              <div class="li-end"><span class="num" [class.text-danger]="(r.product.stockQty ?? 0) <= 0">{{ r.product.stockQty }} left</span></div>
+            </a>
+          }
+        </div>
+        @if (reorderList().length > 8) { <div class="card-foot"><a class="small" routerLink="/products">+{{ reorderList().length - 8 }} more</a></div> }
+      }
+    </section>
+  </div>
+</div>

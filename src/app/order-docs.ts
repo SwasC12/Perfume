@@ -153,23 +153,12 @@ function invoiceBody(o: Order, s: StoreSettings, qr: string): string {
     </tr>`).join('');
   const subtotal = o.subtotal ?? (o.items || []).reduce((t, i) => t + i.price * i.qty, 0);
   const badge = statusBadge(o);
-  const hasBank = !!(s.bankAccountNumber && s.bankName);
-  const payBlock = o.status === 'pending' && hasBank ? `
-    <div class="kd-pay">
-      <div class="kd-label">Banking details for EFT</div>
-      <table>
-        <tr><th>Bank</th><td>${esc(s.bankName)}</td></tr>
-        <tr><th>Account name</th><td>${esc(s.bankAccountName || s.companyName || 'Kauā Fragrances')}</td></tr>
-        <tr><th>Account no.</th><td>${esc(s.bankAccountNumber)}</td></tr>
-        ${s.bankBranchCode ? `<tr><th>Branch code</th><td>${esc(s.bankBranchCode)}</td></tr>` : ''}
-        ${s.bankAccountType ? `<tr><th>Account type</th><td>${esc(s.bankAccountType)}</td></tr>` : ''}
-        <tr><th>Reference</th><td><strong>${esc(o.reference)}</strong></td></tr>
-      </table>
-    </div>` : `
+  // Payment is by card (Yoco) online and cash/card in person. EFT is no longer accepted.
+  const payBlock = `
     <div class="kd-pay">
       <div class="kd-label">Payment</div>
       <p>${o.status === 'pending'
-        ? `Please pay using reference <strong>${esc(o.reference)}</strong>.`
+        ? `Awaiting card payment for order <strong>${esc(o.reference)}</strong>.`
         : o.status === 'cancelled'
           ? 'This order was cancelled.' + (o.cancelledReason ? ' ' + esc(o.cancelledReason) : '')
           : `Received with thanks${o.paidAt ? ' on ' + longDate(o.paidAt) : ''} · ${paymentLabel(o)}.`}</p>
@@ -496,9 +485,7 @@ export function customerInvoiceMessage(o: Order, s: StoreSettings | null): strin
     `Attached is your invoice ${invoiceNo(o)} for order ${o.reference}: ${money(o.total)}.`,
   ];
   if (o.status === 'pending') {
-    lines.push(s?.bankAccountNumber
-      ? `Please pay by EFT to ${s.bankName || 'our bank'}, account ${s.bankAccountNumber}${s.bankBranchCode ? ', branch ' + s.bankBranchCode : ''}, using reference ${o.reference}.`
-      : `Please use reference ${o.reference} when you pay.`);
+    lines.push(`Your card payment hasn't come through yet. Reply here if you'd like us to send you a payment link.`);
   } else if (o.status !== 'cancelled') {
     lines.push('Payment received, thank you!');
   }

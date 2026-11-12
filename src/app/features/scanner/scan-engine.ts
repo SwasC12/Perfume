@@ -34,10 +34,61 @@ export class ScanEngine {
   private nativeListener: PluginListenerHandle | null = null;
   private frameHandle = 0;
 
-  constructor(private readonly onHit: (hit: ScanHit) => void) {}
+  /**
+   * @param aim  Picklist mode, like a Zebra imager: returns the aiming window
+   *             (viewport CSS px). When several codes are in view, only the one
+   *             whose centre sits in that window is read — nearest the centre
+   *             wins. Return null to accept any code.
+   */
+  constructor(
+    private readonly onHit: (hit: ScanHit) => void,
+    private readonly aim: () => DOMRect | null = () => null,
+  ) {}
+
+  /** Pick the code under the crosshair. Centres are in viewport CSS px. */
+  private pick<T>(codes: T[], centre: (c: T) => { x: number; y: number } | null): T | null {
+    if (!codes.length) return null;
+    const box = this.aim();
+    if (!box || box.width < 10) return codes[0];
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    // Slack around the window so a code half-way in still reads. With a single
+    // code in view be generous (nothing to confuse it with); with several,
+    // be strict so only the aimed one is read.
+    const slack = codes.length === 1 ? 0.5 : 0.12;
+    const padX = box.width * slack;
+    const padY = box.height * slack;
+    let best: T | null = null;
+    let bestD = Infinity;
+    for (const c of codes) {
+      const p = centre(c);
+      if (!p) { if (codes.length === 1) return c; continue; }
+      if (p.x < box.left - padX || p.x > box.right + padX || p.y < box.top - padY || p.y > box.bottom + padY) continue;
+      const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    return best;
+  }
 
   static isNative(): boolean {
     return Capacitor.isNativePlatform();
+  }
+
+  /**
+   * Load the decoder code ahead of time (called while the app is idle), so
+   * pressing Scan only has to start the camera.
+   */
+  static async prewarm(): Promise<void> {
+    try {
+      if (ScanEngine.isNative()) {
+        const { BarcodeScanner } = await import('@capacitor-mlkit/barcode-scanning');
+        await BarcodeScanner.checkPermissions();
+      } else if (!(window as any).BarcodeDetector) {
+        // Spin the zxing worker up once so its wasm is compiled and cached.
+        const w = new Worker(new URL('./zxing.worker', import.meta.url), { type: 'module' });
+        setTimeout(() => w.terminate(), 4000);
+      }
+    } catch { /* best effort */ }
   }
 
   async start(video: HTMLVideoElement | null): Promise<void> {
@@ -104,10 +155,18 @@ export class ScanEngine {
 
     // The preview is drawn behind the WebView, so the page must go see-through.
     document.documentElement.classList.add(NATIVE_CLASS);
+    // Corner points arrive in physical screen pixels; the page works in CSS px.
+    const dpr = window.devicePixelRatio || 1;
     this.nativeListener = await BarcodeScanner.addListener('barcodesScanned', (event) => {
-      const b = event.barcodes?.[0];
+      const b = this.pick(event.barcodes ?? [], (code) => {
+        const pts = code.cornerPoints;
+        if (!pts || !pts.length) return null;
+        let x = 0; let y = 0;
+        for (const p of pts) { x += p[0]; y += p[1]; }
+        return { x: x / pts.length / dpr, y: y / pts.length / dpr };
+      });
       const text = b?.rawValue ?? b?.displayValue;
-      if (text) this.onHit({ text, format: b.format });
+      if (b && text) this.onHit({ text, format: String(b.format) });
     });
     try {
       await BarcodeScanner.startScan({
@@ -185,6 +244,19 @@ export class ScanEngine {
     this.schedule();
   }
 
+  /** Centre of a box in video pixels → viewport CSS px (video uses object-fit: cover). */
+  private videoToViewport(video: HTMLVideoElement, bb: DOMRectReadOnly | undefined): { x: number; y: number } | null {
+    if (!bb || !video.videoWidth) return null;
+    const r = video.getBoundingClientRect();
+    const scale = Math.max(r.width / video.videoWidth, r.height / video.videoHeight);
+    const offX = (r.width - video.videoWidth * scale) / 2;
+    const offY = (r.height - video.videoHeight * scale) / 2;
+    return {
+      x: r.left + offX + (bb.x + bb.width / 2) * scale,
+      y: r.top + offY + (bb.y + bb.height / 2) * scale,
+    };
+  }
+
   /** Run once per *new* camera frame (not per screen refresh) when possible. */
   private schedule(): void {
     const v = this.video as any;
@@ -201,7 +273,7 @@ export class ScanEngine {
         this.pending = true;
         try {
           const codes = await this.detector.detect(video);
-          const c = codes?.[0];
+          const c = this.pick<any>(codes ?? [], (code) => this.videoToViewport(video, code.boundingBox));
           if (c?.rawValue && this.running) this.onHit({ text: c.rawValue, format: c.format });
         } catch { /* skip frame */ }
         this.pending = false;

@@ -19,8 +19,9 @@ public class MainActivity extends BridgeActivity {
         int code = event.getKeyCode();
         if ((code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_UP)
                 && KfDevicePlugin.instance != null) {
-            boolean down = event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0;
-            if (KfDevicePlugin.instance.onTriggerKey(code, down)) return true;
+            boolean press = event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0;
+            boolean release = event.getAction() == KeyEvent.ACTION_UP;
+            if (KfDevicePlugin.instance.onTriggerKey(code, press, release)) return true;
         }
         return super.dispatchKeyEvent(event);
     }

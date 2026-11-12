@@ -341,20 +341,23 @@ export class ShopAdminService {
     items: OrderItem[]; subtotal: number; total: number;
     customerName: string; paymentMethod: string; status: OrderStatus;
     discountCode?: string; discountAmount?: number;
+    /** Stable id for retries: the same sale always writes the same order doc. */
+    saleId?: string; reference?: string; createdAt?: number;
   }): Promise<string> {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     // Crypto RNG (32 chars divides 256 evenly, so it's uniform). Retry on a
     // collision so a POS sale never overwrites another order's public status.
     const pick = () => 'KF-' + Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => chars[b % chars.length]).join('');
-    let reference = pick();
-    for (let i = 0; i < 5; i++) {
+    let reference = data.reference || pick();
+    for (let i = 0; i < 5 && !data.reference; i++) {
       try {
         if (!(await getDoc(doc(getDb(), 'orderStatus', reference))).exists()) break;
       } catch { break; }
       reference = pick();
     }
-    const now = Date.now();
-    await addDoc(collection(getDb(), 'orders'), {
+    const now = data.createdAt || Date.now();
+    const target = data.saleId ? doc(getDb(), 'orders', 'pos-' + data.saleId) : doc(collection(getDb(), 'orders'));
+    await setDoc(target, {
       reference, uid: null, channel: 'pos', paymentMethod: data.paymentMethod,
       customer: { name: data.customerName || 'Walk-in', email: '', phone: '' },
       deliveryMethod: 'collection', deliveryFee: 0,

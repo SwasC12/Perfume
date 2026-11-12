@@ -1,0 +1,236 @@
+@if (order(); as o) {
+<div class="page">
+  <header class="page-head">
+    <div>
+      <a class="back" routerLink="/orders"><app-icon name="chevron-left" [size]="16" /> Orders</a>
+      <h1 class="page-title row nowrap"><span class="mono">{{ o.reference }}</span> <span class="pill" [attr.data-status]="o.status">{{ o.status }}</span></h1>
+      <p class="page-sub">{{ dateTime(o.createdAt) }} · {{ o.channel === 'pos' ? 'In store (POS)' : 'Online' }} · {{ total(o) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn" (click)="openDoc('slip')"><app-icon name="package" [size]="16" /> Packing slip</button>
+      <button class="btn" (click)="openDoc('invoice')"><app-icon name="receipt" [size]="16" /> Invoice</button>
+      @if (next(); as n) {
+        <button class="btn btn-primary hide-phone" [disabled]="busy()" (click)="runNext(o)">{{ n.label }}</button>
+      }
+    </div>
+  </header>
+
+  @for (f of flags(); track f) {
+    <div class="notice warn"><app-icon name="alert" [size]="18" /><span>{{ f }}</span></div>
+  }
+  @if (o.status === 'cancelled') {
+    <div class="notice danger"><app-icon name="x" [size]="18" /><span>This order is cancelled{{ o.cancelledReason ? ' (' + o.cancelledReason + ')' : '' }}.@if (o.stockRestored) { Stock was put back.}</span></div>
+  }
+
+  <div class="split">
+    <div class="stack">
+      <!-- Fulfilment -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Fulfilment</h2>
+          <span class="small muted">Step {{ stageIdx() + 1 }} of {{ stages.length }}</span>
+        </div>
+        <div class="card-body stack">
+          <ol class="steps">
+            @for (s of stages; track s; let i = $index) {
+              <li>
+                <button type="button" class="step" [class.done]="stageIdx() >= i" [class.current]="stageIdx() === i"
+                        [disabled]="i > stageIdx() + 1 || busy()" (click)="setStage(o, s)">
+                  <span class="dot">@if (stageIdx() > i) { <app-icon name="check" [size]="13" /> } @else { {{ i + 1 }} }</span>
+                  <span class="lbl">{{ s }}</span>
+                </button>
+              </li>
+            }
+          </ol>
+          @if (stageIdx() < stages.length - 1) {
+            <p class="small muted">Work through each step in order. The order can only be fulfilled once it reaches <strong>shipped</strong>.</p>
+          }
+        </div>
+      </section>
+
+      <!-- Items -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Items</h2>
+          <span class="small muted">{{ units(o) }} unit{{ units(o) === 1 ? '' : 's' }}</span>
+        </div>
+        <div class="items">
+          @for (i of o.items; track $index) {
+            <div class="item">
+              <span class="qty">{{ i.qty }}×</span>
+              <div class="li-main">
+                <span class="li-title">{{ i.name }}</span>
+                <span class="li-sub">{{ i.size || '—' }}@if (i.isGift) { · <span class="text-ok">Gift</span>} · {{ i.price | currency:'ZAR':'symbol-narrow':'1.0-2' }} each</span>
+              </div>
+              <span class="num bold">{{ i.price * i.qty | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
+            </div>
+          }
+        </div>
+        <div class="card-body">
+          <div class="totals">
+            <div><span class="muted">Subtotal</span><span class="num">{{ subtotal(o) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+            @if (o.discountAmount) {
+              <div><span class="muted">Discount{{ o.discountCode ? ' (' + o.discountCode + ')' : '' }}</span><span class="num text-ok">−{{ o.discountAmount | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+            }
+            @if (o.channel !== 'pos') {
+              <div><span class="muted">{{ o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</span><span class="num">{{ o.deliveryFee ? (o.deliveryFee | currency:'ZAR':'symbol-narrow':'1.0-2') : 'Free' }}</span></div>
+            }
+            <div class="grand"><span>Total</span><span class="num">{{ total(o) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+            <div><span class="muted">Payment</span><span>{{ payment(o) }}@if (o.paidAt) { · {{ dateTime(o.paidAt) }}}</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Customer -->
+      <section class="card">
+        <div class="card-head"><h2>Customer &amp; delivery</h2></div>
+        <div class="card-body">
+          <dl class="kv">
+            <dt>Name</dt><dd>{{ o.customer.name || 'Walk-in' }}</dd>
+            @if (o.customer.email) { <dt>Email</dt><dd><a [href]="'mailto:' + o.customer.email">{{ o.customer.email }}</a></dd> }
+            @if (o.customer.phone) { <dt>Phone</dt><dd><a [href]="'tel:' + o.customer.phone">{{ o.customer.phone }}</a></dd> }
+            <dt>Method</dt><dd>{{ o.deliveryMethod === 'collection' ? 'Collection' : 'Delivery' }}</dd>
+            @if (o.deliveryMethod !== 'collection' && address(o)) { <dt>Ship to</dt><dd>{{ address(o) }}</dd> }
+            @if (o.referralCode) { <dt>Referral</dt><dd>{{ o.referralCode }}</dd> }
+            @if (o.referralRewardApplied) { <dt>Reward</dt><dd><span class="pill ok">Free 30 ml gift</span></dd> }
+            @if (o.uid) { <dt>Account</dt><dd>Registered customer</dd> }
+          </dl>
+          @if (o.customer.note) {
+            <div class="notice mt-2"><app-icon name="edit" [size]="16" /><span>"{{ o.customer.note }}"</span></div>
+          }
+        </div>
+      </section>
+
+      <!-- Tracking -->
+      <section class="card">
+        <div class="card-head"><h2>Courier &amp; tracking</h2></div>
+        <form class="card-body form" (ngSubmit)="saveTracking(o)">
+          <div class="field-row">
+            <div class="field">
+              <label for="courier">Courier</label>
+              <input id="courier" type="text" name="courier" placeholder="e.g. The Courier Guy"
+                     [ngModel]="courier()" (ngModelChange)="courier.set($event)" />
+            </div>
+            <div class="field">
+              <label for="trackno">Tracking number</label>
+              <input id="trackno" type="text" name="trackno" placeholder="Waybill"
+                     [ngModel]="trackNo()" (ngModelChange)="trackNo.set($event)" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="trackurl">Tracking link</label>
+            <input id="trackurl" type="url" name="trackurl" placeholder="https://…"
+                   [ngModel]="trackUrl()" (ngModelChange)="trackUrl.set($event)" />
+            <span class="hint">Saving a tracking number emails the customer.</span>
+          </div>
+          <div class="row between">
+            <span class="small muted">
+              @if (o.courier || o.trackingNumber || o.trackingUrl) {
+                Customer sees: {{ o.courier || 'Courier' }} · {{ o.trackingNumber || 'no tracking number yet' }}
+                @if (o.trackingUrl) { · <a [href]="o.trackingUrl" target="_blank" rel="noopener">tracking link</a> }
+              }
+            </span>
+            <button type="submit" class="btn" [disabled]="savingTracking()">{{ savingTracking() ? 'Saving…' : 'Save tracking' }}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <aside class="stack sticky-side">
+      <!-- Status -->
+      <section class="card">
+        <div class="card-head"><h2>Status</h2><span class="pill" [attr.data-status]="o.status">{{ o.status }}</span></div>
+        <div class="card-body stack">
+          @if (next(); as n) {
+            <button class="btn btn-primary btn-block hide-phone" [disabled]="busy()" (click)="runNext(o)">{{ n.label }}</button>
+          }
+          <div class="field">
+            <label for="status">Change status</label>
+            <select id="status" [disabled]="busy()" (change)="onStatusSelect(o, $event)">
+              @for (s of statuses; track s) { <option [value]="s" [selected]="s === o.status">{{ s }}</option> }
+            </select>
+          </div>
+          @if (o.status !== 'cancelled' && o.status !== 'delivered') {
+            <button class="btn btn-danger btn-block" [disabled]="busy()" (click)="cancelOrder(o)">Cancel order</button>
+          }
+        </div>
+      </section>
+
+      <!-- Documents -->
+      <section class="card">
+        <div class="card-head"><h2>Documents</h2></div>
+        <div class="card-body stack-sm">
+          <button class="btn btn-block" (click)="openDoc('invoice')"><app-icon name="receipt" [size]="16" /> Invoice</button>
+          <button class="btn btn-block" (click)="openDoc('slip')"><app-icon name="package" [size]="16" /> Packing slip</button>
+          @if (o.customer.phone) {
+            <button class="btn btn-soft btn-block" [disabled]="!!docBusy()" (click)="sendInvoice()">
+              <app-icon name="whatsapp" [size]="16" /> {{ docBusy() === 'send' ? 'Preparing invoice…' : 'Send invoice to ' + firstName(o) }}
+            </button>
+          }
+        </div>
+      </section>
+
+      <!-- QR -->
+      <section class="card card-pad qr-card">
+        @if (qr(); as src) {
+          <img [src]="src" width="132" height="132" alt="Order QR code" />
+        } @else {
+          <div class="skeleton" style="width:132px;height:132px"></div>
+        }
+        <div>
+          <div class="bold mono">{{ o.reference }}</div>
+          <p class="small muted">Scan this to open the order.</p>
+        </div>
+      </section>
+
+      <button class="btn btn-ghost text-danger" (click)="deleteOrder(o)"><app-icon name="trash" [size]="16" /> Delete order</button>
+    </aside>
+  </div>
+
+  @if (next(); as n) {
+    <div class="action-bar only-phone">
+      <button class="btn btn-primary btn-lg" [disabled]="busy()" (click)="runNext(o)">{{ n.label }}</button>
+    </div>
+  }
+</div>
+
+@if (docOpen()) {
+  <kf-sheet size="full" [title]="docKind() === 'invoice' ? 'Invoice' : 'Packing slip'" [subtitle]="o.reference" (closed)="docOpen.set(false)">
+    <div class="stack">
+      <div class="seg" aria-label="Document">
+        <button type="button" [class.on]="docKind() === 'invoice'" (click)="docKind.set('invoice')">Invoice</button>
+        <button type="button" [class.on]="docKind() === 'slip'" (click)="docKind.set('slip')">Packing slip</button>
+      </div>
+      <div class="doc-preview">
+        @if (docPreview(); as html) { <div [innerHTML]="html"></div> } @else { <div class="list-empty">Preparing document…</div> }
+      </div>
+    </div>
+    <ng-container sheet-actions>
+      @if (o.customer.phone && docKind() === 'invoice') {
+        <button class="btn btn-soft" [disabled]="!!docBusy()" (click)="sendInvoice()"><app-icon name="whatsapp" [size]="16" /> {{ docBusy() === 'send' ? 'Preparing…' : 'Send' }}</button>
+      }
+      <button class="btn" [disabled]="!!docBusy()" (click)="docAction('share')"><app-icon name="share" [size]="16" /> {{ docBusy() === 'share' ? 'Preparing…' : 'Share' }}</button>
+      <button class="btn btn-primary" [disabled]="!!docBusy()" (click)="docAction('print')"><app-icon name="printer" [size]="16" /> {{ docBusy() === 'print' ? 'Preparing…' : 'Print' }}</button>
+    </ng-container>
+  </kf-sheet>
+}
+} @else if (shop.loadingOrders() || !shop.orders().length) {
+  <div class="page">
+    <div class="skeleton" style="height:28px;width:180px"></div>
+    <div class="split">
+      <div class="stack"><div class="skeleton" style="height:160px"></div><div class="skeleton" style="height:220px"></div></div>
+      <div class="skeleton hide-phone" style="height:240px"></div>
+    </div>
+  </div>
+} @else {
+  <div class="page narrow">
+    <div class="card">
+      <div class="empty">
+        <span class="empty-icon"><app-icon name="receipt" [size]="24" /></span>
+        <h3>Order not found</h3>
+        <p>It may have been deleted.</p>
+        <a class="btn btn-primary" routerLink="/orders">Back to orders</a>
+      </div>
+    </div>
+  </div>
+}

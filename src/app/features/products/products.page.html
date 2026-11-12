@@ -1,0 +1,165 @@
+<div class="page">
+  <header class="page-head compact">
+    <div>
+      <h1 class="page-title">Products</h1>
+      <p class="page-sub">
+        {{ counts().all }} products
+        @if (counts().out) { · <span class="text-danger">{{ counts().out }} out of stock</span> }
+        @if (counts().waiting) { · {{ counts().waiting }} with shoppers waiting }
+      </p>
+    </div>
+    <div class="page-actions">
+      <button type="button" class="btn btn-icon" (click)="scanFind()" aria-label="Scan to find a product" title="Scan to find">
+        <app-icon name="qr" [size]="18" />
+      </button>
+      <button type="button" class="btn" (click)="toolsOpen.set(true)"><app-icon name="layers" [size]="16" /> Tools</button>
+      <a class="btn btn-primary" routerLink="/products/new"><app-icon name="plus" [size]="16" /> New product</a>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="search">
+      <app-icon name="search" [size]="16" />
+      <input type="search" placeholder="Search name, inspired by, barcode…" aria-label="Search products"
+             [ngModel]="search()" (ngModelChange)="setSearch($event)" />
+    </div>
+  </div>
+  <div class="chips">
+    @for (f of filters; track f.key) {
+      @if (f.key === 'all' || counts()[f.key] || filter() === f.key) {
+        <button type="button" class="chip" [class.on]="filter() === f.key" (click)="setFilter(f.key)">
+          {{ f.label }} <span class="n">{{ counts()[f.key] }}</span>
+        </button>
+      }
+    }
+  </div>
+
+  @if (shop.loadingProducts() && !counts().all) {
+    <div class="list">
+      @for (i of [1, 2, 3, 4, 5]; track i) {
+        <div class="list-item"><span class="thumb skeleton"></span><div class="li-main"><span class="skeleton sk-line"></span><span class="skeleton sk-line short"></span></div></div>
+      }
+    </div>
+  } @else if (!filtered().length) {
+    <div class="empty">
+      <div class="empty-icon"><app-icon name="package" [size]="24" /></div>
+      <h3>{{ counts().all ? 'No matches' : 'No products yet' }}</h3>
+      <p>{{ counts().all ? 'Try another search or filter.' : 'Add the fragrances you sell — they appear on your shop instantly.' }}</p>
+      @if (!counts().all) {
+        <div class="row">
+          <a class="btn btn-primary" routerLink="/products/new"><app-icon name="plus" [size]="16" /> Add a product</a>
+          <button type="button" class="btn" (click)="importStarter()" [disabled]="busy() === 'starter'">Import starter fragrances</button>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="list">
+      @for (r of visible(); track r.p.id) {
+        <div class="list-item" [class.is-hidden]="!r.p.active">
+          <a class="pl-link" [routerLink]="['/products', r.p.id]">
+            <img class="thumb" [src]="r.img" alt="" width="44" height="44" loading="lazy" decoding="async" (error)="hideImg($event)" />
+            <div class="li-main">
+              <span class="li-title">
+                <span class="ellipsis">{{ r.p.name }}</span>
+                @if (!r.p.active) { <span class="pill plain">Hidden</span> }
+              </span>
+              <span class="li-sub">
+                @if (r.multi) { From }{{ r.from | currency:'ZAR':'symbol-narrow':'1.0-2' }} · {{ r.sizes }}
+              </span>
+            </div>
+          </a>
+          <div class="li-end">
+            @if (!r.inStock) {
+              <span class="pill danger">Out</span>
+            } @else if (r.low) {
+              <span class="pill warn">{{ r.qty }} left</span>
+            } @else {
+              <span class="tiny muted">{{ r.qty != null ? r.qty + ' in stock' : 'In stock' }}</span>
+            }
+            <label class="switch" [title]="r.p.active ? 'Live on shop' : 'Hidden from shop'">
+              <input type="checkbox" [checked]="r.p.active" (change)="toggleActive(r.p, $event)" [attr.aria-label]="'Show ' + r.p.name + ' on shop'" />
+              <span></span>
+            </label>
+          </div>
+          @if (r.waiting) {
+            <button type="button" class="btn btn-sm btn-soft notify" (click)="notifyRestock(r.p)" [disabled]="busy() === 'notify-' + r.p.id">
+              <app-icon name="bell" [size]="14" /> {{ r.waiting }}
+              <span class="hide-phone">&nbsp;waiting · notify</span>
+            </button>
+          }
+        </div>
+      }
+    </div>
+    @if (filtered().length > visible().length) {
+      <button type="button" class="btn btn-block" (click)="limit.set(limit() + 100)">
+        Show more ({{ filtered().length - visible().length }} left)
+      </button>
+    }
+  }
+</div>
+
+@if (toolsOpen()) {
+  <kf-sheet title="Product tools" subtitle="Bulk changes across the whole catalogue" size="wide" (closed)="toolsOpen.set(false)">
+    <div class="stack-lg">
+      <section class="stack">
+        <div>
+          <h3 class="section-title">Set price per size</h3>
+          <p class="small muted">One price for every product in a size. Individual and sale prices stay editable.</p>
+        </div>
+        @for (row of bulkRows; track row.key) {
+          <div class="bulk-row">
+            <span class="bold bulk-size">{{ row.label }}</span>
+            <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="R 0.00" [attr.aria-label]="row.label + ' price'"
+                   [ngModel]="bulkPrice()[row.key]" (ngModelChange)="setBulkPrice(row.key, $event)" />
+            <button type="button" class="btn" (click)="applyBulkPrice(row.key, row.label)" [disabled]="busy() === row.key">
+              {{ busy() === row.key ? 'Applying…' : 'Apply' }}
+            </button>
+          </div>
+        }
+      </section>
+
+      <hr class="mt-0" />
+
+      <section class="stack">
+        <div>
+          <h3 class="section-title">Set cost per unit</h3>
+          <p class="small muted">What each unit costs you (oil + bottle + packaging). Used for profit and inventory value.</p>
+        </div>
+        <div class="bulk-row">
+          <span class="bold bulk-size">Cost</span>
+          <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="R 0.00" aria-label="Cost per unit"
+                 [(ngModel)]="bulkCostValue" />
+          <button type="button" class="btn" (click)="applyBulkCost()" [disabled]="busy() === 'cost'">
+            {{ busy() === 'cost' ? 'Applying…' : 'Apply' }}
+          </button>
+        </div>
+        <label class="check"><input type="checkbox" [(ngModel)]="bulkCostOnlyMissing" /> Only products without a cost yet</label>
+      </section>
+
+      <hr class="mt-0" />
+
+      <section class="stack">
+        <h3 class="section-title">Catalogue</h3>
+        <div class="list">
+          <button type="button" class="list-item" (click)="importStarter()" [disabled]="busy() === 'starter'">
+            <span class="avatar"><app-icon name="download" [size]="18" /></span>
+            <div class="li-main">
+              <span class="li-title">{{ busy() === 'starter' ? 'Importing…' : 'Import starter fragrances' }}</span>
+              <span class="li-sub">{{ starterCount }} popular fragrances · same names are skipped</span>
+            </div>
+          </button>
+          <button type="button" class="list-item" (click)="cleanRumiImages()" [disabled]="!rumiImageCount() || busy() === 'clean'">
+            <span class="avatar"><app-icon name="image" [size]="18" /></span>
+            <div class="li-main">
+              <span class="li-title">{{ busy() === 'clean' ? 'Clearing…' : 'Use placeholders for Rumi images' }}</span>
+              <span class="li-sub">{{ rumiImageCount() ? rumiImageCount() + ' products still use old Rumi photos' : 'No Rumi image links left' }}</span>
+            </div>
+          </button>
+        </div>
+      </section>
+    </div>
+    <ng-container sheet-actions>
+      <button type="button" class="btn" (click)="toolsOpen.set(false)">Done</button>
+    </ng-container>
+  </kf-sheet>
+}

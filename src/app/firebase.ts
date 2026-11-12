@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { initializeFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 import { firebaseConfig, isFirebaseConfigured, ADMIN_UID } from './firebase.config';
 
@@ -12,9 +12,22 @@ function getApp(): FirebaseApp {
   return app;
 }
 
-/** Shared Firestore handle (initialised once, ignores undefined fields). */
+/**
+ * Shared Firestore handle (initialised once, ignores undefined fields).
+ * Data is cached on the device (IndexedDB), so after the first run every
+ * screen paints instantly from cache while the live listeners catch up, and
+ * the app keeps working offline. Falls back to memory if IndexedDB is blocked.
+ */
 export function getDb(): Firestore {
-  if (!db) db = initializeFirestore(getApp(), { ignoreUndefinedProperties: true });
+  if (db) return db;
+  try {
+    db = initializeFirestore(getApp(), {
+      ignoreUndefinedProperties: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch {
+    db = initializeFirestore(getApp(), { ignoreUndefinedProperties: true });
+  }
   return db;
 }
 

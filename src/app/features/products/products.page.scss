@@ -1,0 +1,17 @@
+.pl-link {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 12px;
+  color: inherit; text-decoration: none !important;
+  margin: -12px 0; padding: 12px 0; // full-height tap target
+}
+.list-item:has(.pl-link:hover) { background: var(--surface-2); }
+.list-item.is-hidden .thumb { opacity: .5; }
+.li-end .switch { min-height: 24px; }
+.notify { flex: none; }
+
+.sk-line { display: block; height: 12px; width: 60%; }
+.sk-line.short { width: 35%; }
+
+.bulk-row {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+}

@@ -25,6 +25,11 @@
     @if (purpose() === 'tab') {
       <span class="scn-count" title="Good reads this session">{{ okCount() }}</span>
     }
+    <button type="button" class="scn-icon-btn" [class.on]="aimOn()" (click)="toggleAim()"
+            [attr.aria-label]="aimOn() ? 'Aim mode on: only the code in the window is read' : 'Aim mode off: any code in view is read'"
+            [attr.title]="aimOn() ? 'Aim: window only' : 'Aim: anywhere'">
+      <app-icon name="target" [size]="20" />
+    </button>
     <button type="button" class="scn-icon-btn" [class.on]="!continuous()" (click)="toggleMode()"
             [attr.aria-label]="continuous() ? 'Switch to trigger scanning' : 'Switch to continuous scanning'">
       <span class="scn-mode">{{ continuous() ? '∞' : '1×' }}</span>
@@ -50,7 +55,7 @@
   <div class="scn-view" (click)="!continuous() ? trigger() : null">
     @if (!native) { <video #video playsinline muted autoplay></video> }
 
-    <div class="scn-reticle" [class.ok]="flash() === 'ok'" [class.err]="flash() === 'err'" [class.dup]="flash() === 'dup'"
+    <div #reticle class="scn-reticle" [class.aim]="aimOn()" [class.ok]="flash() === 'ok'" [class.err]="flash() === 'err'" [class.dup]="flash() === 'dup'"
          [class.idle]="state() !== 'live' || (!continuous() && !armed())">
       <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
       <span class="laser"></span>
@@ -64,7 +69,7 @@
         <button type="button" class="scn-btn" (click)="start()">Retry</button>
       </div>
     } @else if (!continuous() && !armed()) {
-      <div class="scn-msg hint">Press a volume key or tap to scan</div>
+      <div class="scn-msg hint">Hold a volume key or tap to scan</div>
     } @else {
       <div class="scn-hint">{{ purpose() === 'tab' ? modeHint() : 'Aim the red line across the code' }}</div>
     }
@@ -84,7 +89,8 @@
         <div class="scn-res-body">
           <div class="scn-res-title">
             <strong>{{ r.title }}</strong>
-            @if (r.order) { <span class="status-pill" [attr.data-status]="r.order.status">{{ r.order.status }}</span> }
+            @if (r.order) { <span class="pill" [attr.data-status]="r.order.status">{{ r.order.status }}</span> }
+            @if (r.format) { <span class="scn-sym">{{ r.format }}</span> }
           </div>
           <div class="scn-res-sub">{{ r.sub }}</div>
           @if (r.order && mode() === 'lookup') {

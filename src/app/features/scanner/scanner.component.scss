@@ -135,6 +135,21 @@
   0%, 100% { opacity: 1; transform: scaleX(1); }
   50% { opacity: 0.55; transform: scaleX(0.97); }
 }
+/* Aim (picklist) mode: a centre crosshair, like a Zebra aiming dot. */
+.scn-reticle.aim::after {
+  content: '';
+  position: absolute; left: 50%; top: 50%;
+  width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid var(--scn-laser);
+  box-shadow: 0 0 8px rgba(255, 43, 43, 0.8);
+}
+.scn-reticle.aim.idle::after { opacity: 0.3; }
+.scn-sym {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
+  border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+  background: rgba(255, 255, 255, 0.12); color: var(--scn-dim);
+}
 
 .scn-hint, .scn-msg {
   position: absolute;

@@ -1,0 +1,211 @@
+<div class="page narrow">
+  <header class="page-head">
+    <div>
+      <a class="back" routerLink="/products"><app-icon name="chevron-left" [size]="16" /> Products</a>
+      <h1 class="page-title">{{ isNew() ? 'New product' : (product()?.name || 'Edit product') }}</h1>
+      @if (!isNew() && product(); as p) {
+        <p class="page-sub">{{ p.active ? 'Live on the shop' : 'Hidden from the shop' }}</p>
+      }
+    </div>
+  </header>
+
+  @if (notFound()) {
+    <div class="empty">
+      <div class="empty-icon"><app-icon name="package" [size]="24" /></div>
+      <h3>Product not found</h3>
+      <p>It may have been deleted.</p>
+      <a class="btn" routerLink="/products">Back to products</a>
+    </div>
+  } @else if (form()) {
+    @let f = form()!;
+    @if (waiting() && product(); as p) {
+      <div class="notice">
+        <app-icon name="bell" [size]="18" />
+        <span>{{ waiting() }} {{ waiting() === 1 ? 'shopper is' : 'shoppers are' }} waiting for this. They're emailed automatically when you save it back in stock.</span>
+      </div>
+    }
+
+    <!-- Basics -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Basics</h2>
+      <div class="field">
+        <label for="pe-name">Name *</label>
+        <input id="pe-name" type="text" [(ngModel)]="f.name" autocomplete="off" placeholder="e.g. Inspired By Creed Aventus" />
+      </div>
+      <div class="field">
+        <label for="pe-insp">Inspired by (smells like)</label>
+        <input id="pe-insp" type="text" [(ngModel)]="f.inspiredBy" placeholder="e.g. Tom Ford Oud Wood" />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="pe-cat">Category</label>
+          <input id="pe-cat" type="text" [(ngModel)]="f.category" placeholder="e.g. Oud, Floral" />
+        </div>
+        <div class="field">
+          <label for="pe-gen">Gender</label>
+          <select id="pe-gen" [(ngModel)]="f.gender">
+            <option value="">— select —</option>
+            <option value="Men">Men</option>
+            <option value="Women">Women</option>
+            <option value="Unisex">Unisex (both)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="pe-bc">Barcode</label>
+        <div class="row nowrap">
+          <input id="pe-bc" type="text" [(ngModel)]="f.barcode" inputmode="numeric" autocomplete="off" placeholder="Scan or type the EAN on the bottle" />
+          <button type="button" class="btn btn-icon" (click)="scanBarcode()" aria-label="Scan barcode" title="Scan barcode"><app-icon name="qr" [size]="18" /></button>
+        </div>
+        <span class="hint">Optional. QR labels work without it.</span>
+      </div>
+    </section>
+
+    <!-- Sizes -->
+    <section class="stack">
+      <div>
+        <h2 class="section-title">Sizes, prices &amp; stock</h2>
+        <p class="small muted">Set a price for each size you sell — sizes without a price are not offered. 30ml is required.</p>
+      </div>
+      @for (row of sizeRows; track row.key) {
+        @let s = f.sizes[row.key];
+        <div class="card card-pad form size-card" [class.off]="!s.price">
+          <div class="row between">
+            <h3 class="section-title mt-0">{{ row.label }}</h3>
+            @if (margin(s); as m) { <span class="tiny muted">{{ m }}</span> }
+            @else if (!s.price) { <span class="tiny faint">Not offered</span> }
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label [for]="row.key + '-price'">Price (R)</label>
+              <input [id]="row.key + '-price'" type="number" min="0" step="0.01" inputmode="decimal" [(ngModel)]="s.price" placeholder="0.00" />
+            </div>
+            <div class="field">
+              <label [for]="row.key + '-sale'">Sale price (R)</label>
+              <input [id]="row.key + '-sale'" type="number" min="0" step="0.01" inputmode="decimal" [(ngModel)]="s.salePrice" placeholder="optional" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label [for]="row.key + '-cost'">Cost (R)</label>
+              <input [id]="row.key + '-cost'" type="number" min="0" step="0.01" inputmode="decimal" [(ngModel)]="s.cost" placeholder="what it costs you" />
+            </div>
+            <div class="field">
+              <label [for]="row.key + '-qty'">Stock quantity</label>
+              <input [id]="row.key + '-qty'" type="number" min="0" inputmode="numeric" [(ngModel)]="s.stockQty" placeholder="not tracked" />
+            </div>
+          </div>
+          <div class="row between">
+            <label class="switch"><input type="checkbox" [(ngModel)]="s.inStock" /><span></span> In stock</label>
+            <div class="row">
+              <span class="img-prev sm">
+                @if (s.imageUrl) { <img [src]="s.imageUrl" alt="" width="40" height="40" loading="lazy" decoding="async" (error)="hideImg($event)" /> }
+                @else { <app-icon name="image" [size]="16" /> }
+              </span>
+              <label class="btn btn-sm" [class.disabled]="uploading() === row.key">
+                {{ uploading() === row.key ? 'Uploading…' : (s.imageUrl ? 'Replace photo' : 'Add photo') }}
+                <input type="file" accept="image/*" hidden (change)="onSizeImageFile($event, row.key)" />
+              </label>
+              @if (s.imageUrl) {
+                <button type="button" class="btn btn-sm btn-ghost btn-icon" (click)="s.imageUrl = ''" aria-label="Remove size photo"><app-icon name="x" [size]="16" /></button>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </section>
+
+    <!-- Images -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Images</h2>
+      <div class="field">
+        <span class="field-label">Main photo</span>
+        <div class="main-img">
+          <span class="img-prev lg">
+            @if (f.imageUrl) { <img [src]="f.imageUrl" alt="" width="96" height="96" loading="lazy" decoding="async" (error)="hideImg($event)" /> }
+            @else { <app-icon name="image" [size]="28" /> }
+          </span>
+          <div class="stack-sm grow">
+            <div class="row">
+              <label class="btn btn-sm" [class.disabled]="uploading() === 'main'">
+                <app-icon name="upload" [size]="15" /> {{ uploading() === 'main' ? 'Uploading…' : 'Upload photo' }}
+                <input type="file" accept="image/*" hidden (change)="onMainImageFile($event)" />
+              </label>
+              @if (f.imageUrl) { <button type="button" class="btn btn-sm btn-ghost" (click)="f.imageUrl = ''">Remove</button> }
+            </div>
+            @if (!isDataUrl(f.imageUrl)) {
+              <input type="url" [(ngModel)]="f.imageUrl" placeholder="…or paste an image URL" aria-label="Main image URL" />
+            }
+          </div>
+        </div>
+        <span class="hint">Used when a size has no photo of its own. No photo = branded placeholder.</span>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Gallery</span>
+        <div class="gallery">
+          @for (g of f.gallery; track $index) {
+            <div class="gal">
+              <img [src]="g" alt="" width="80" height="80" loading="lazy" decoding="async" (error)="hideImg($event)" />
+              <button type="button" class="gal-x" (click)="removeGalleryImage($index)" aria-label="Remove image"><app-icon name="x" [size]="12" /></button>
+            </div>
+          }
+          <label class="gal gal-add" [class.disabled]="uploading() === 'gallery'" title="Add gallery photo">
+            @if (uploading() === 'gallery') { <span class="tiny">…</span> } @else { <app-icon name="plus" [size]="20" /> }
+            <input type="file" accept="image/*" hidden (change)="onGalleryFile($event)" />
+          </label>
+        </div>
+        <div class="row nowrap">
+          <input type="url" [(ngModel)]="galleryUrl" placeholder="…or paste an image URL" aria-label="Gallery image URL" (keydown.enter)="addGalleryUrl()" />
+          <button type="button" class="btn" (click)="addGalleryUrl()" [disabled]="!galleryUrl.trim()">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Details -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Details</h2>
+      <div class="field">
+        <label for="pe-desc">Short description</label>
+        <textarea id="pe-desc" rows="2" [(ngModel)]="f.description"></textarea>
+      </div>
+      <div class="field-row three">
+        <div class="field"><label for="pe-nt">Top notes</label><input id="pe-nt" type="text" [(ngModel)]="f.notesTop" /></div>
+        <div class="field"><label for="pe-nh">Heart notes</label><input id="pe-nh" type="text" [(ngModel)]="f.notesHeart" /></div>
+        <div class="field"><label for="pe-nb">Base notes</label><input id="pe-nb" type="text" [(ngModel)]="f.notesBase" /></div>
+      </div>
+      <div class="field">
+        <label for="pe-long">Long description</label>
+        <textarea id="pe-long" rows="4" [(ngModel)]="f.longDescription"></textarea>
+      </div>
+    </section>
+
+    <!-- Visibility -->
+    <section class="card card-pad form">
+      <h2 class="section-title">Visibility</h2>
+      <label class="switch"><input type="checkbox" [(ngModel)]="f.active" /><span></span> Show on shop</label>
+      <label class="switch"><input type="checkbox" [(ngModel)]="f.featured" /><span></span> Featured on the home page</label>
+    </section>
+
+    @if (!isNew() && product()) {
+      <section class="card card-pad row between">
+        <div>
+          <h2 class="section-title mt-0">Delete product</h2>
+          <p class="small muted">Removes it from the shop for good.</p>
+        </div>
+        <button type="button" class="btn btn-danger" (click)="remove()"><app-icon name="trash" [size]="16" /> Delete</button>
+      </section>
+    }
+
+    <div class="action-bar">
+      <a class="btn" routerLink="/products">Cancel</a>
+      <button type="button" class="btn btn-primary" (click)="save()" [disabled]="saving() || !!uploading() || !f.name.trim()">
+        {{ saving() ? 'Saving…' : (isNew() ? 'Add product' : 'Save') }}
+      </button>
+    </div>
+  } @else {
+    <div class="card card-pad stack">
+      <span class="skeleton sk"></span><span class="skeleton sk"></span><span class="skeleton sk short"></span>
+    </div>
+  }
+</div>

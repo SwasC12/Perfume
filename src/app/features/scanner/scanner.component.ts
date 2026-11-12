@@ -1,6 +1,6 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import {
-  AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild,
+  AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, HostListener, NgZone, OnDestroy, ViewChild,
   computed, inject, input, output, signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -20,9 +20,15 @@ export type ScanPurpose = 'tab' | 'order' | 'product' | 'field';
 
 export interface PickedProduct { product: Product; sizeKey?: ProductSizeKey; }
 
+function readAim(): boolean {
+  try { return localStorage.getItem(AIM_KEY) !== '0'; } catch { return true; }
+}
+
 interface ScanResult {
   kind: ResultKind;
   code: string;
+  /** Symbology, e.g. "QR", "EAN-13". */
+  format?: string;
   title: string;
   sub: string;
   at: number;
@@ -53,6 +59,20 @@ interface PackLine {
 const REREAD_MS = 1200;
 const DUPLICATE_MS = 8000;
 const WEDGE_GAP_MS = 45;
+/** Trigger mode: like a handheld's beam timer, stop looking after this long. */
+const BEAM_MS = 4000;
+const AIM_KEY = 'kf.scan.aim';
+
+/** "QR_CODE" / "qr_code" / "QRCode" → "QR"; "EAN_13" → "EAN-13". */
+function prettyFormat(f?: string): string {
+  const k = String(f || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const map: Record<string, string> = {
+    QRCODE: 'QR', QR: 'QR', CODE128: 'Code 128', CODE39: 'Code 39', CODE93: 'Code 93',
+    EAN13: 'EAN-13', EAN8: 'EAN-8', UPCA: 'UPC-A', UPCE: 'UPC-E', ITF: 'ITF',
+    DATAMATRIX: 'Data Matrix', PDF417: 'PDF417', AZTEC: 'Aztec', CODABAR: 'Codabar',
+  };
+  return map[k] ?? (k ? k : '');
+}
 const MODES: { key: ScanMode; label: string; hint: string }[] = [
   { key: 'lookup', label: 'Lookup', hint: 'Scan anything to see what it is' },
   { key: 'receive', label: 'Receive', hint: 'Each scan adds +1 to stock' },
@@ -66,6 +86,7 @@ const MODES: { key: ScanMode; label: string; hint: string }[] = [
   imports: [FormsModule, CurrencyPipe, DatePipe, IconComponent],
   templateUrl: './scanner.component.html',
   styleUrl: './scanner.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ScannerComponent implements AfterViewInit, OnDestroy {
   private shop = inject(ShopAdminService);
@@ -80,6 +101,10 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
   readonly codePicked = output<string>();
 
   @ViewChild('video') videoRef?: ElementRef<HTMLVideoElement>;
+  @ViewChild('reticle') reticleRef?: ElementRef<HTMLElement>;
+
+  /** Picklist / aim mode: only read the code inside the window. */
+  readonly aimOn = signal(readAim());
 
   readonly modes = MODES;
   readonly sizeLabels = PRODUCT_SIZE_LABELS;
@@ -118,7 +143,12 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
   readonly generated = signal<string | null>(null);
   readonly genError = signal<string | null>(null);
 
-  private engine = new ScanEngine((hit) => this.zone.run(() => this.onHit(hit)));
+  private engine = new ScanEngine(
+    (hit) => this.zone.run(() => this.onHit(hit)),
+    () => (this.aimOn() ? this.reticleRef?.nativeElement.getBoundingClientRect() ?? null : null),
+  );
+  private beamTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastFormat = '';
   private lastText = '';
   private lastTextAt = 0;
   private acceptedAt = new Map<string, number>();
@@ -131,7 +161,10 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     void SoundManager.unlock();
     void this.start();
     if (SoundManager.settings.volumeTrigger) {
-      void onHardwareTrigger(() => this.zone.run(() => this.trigger())).then((off) => (this.untrigger = off));
+      void onHardwareTrigger(
+        () => this.zone.run(() => this.trigger()),
+        () => this.zone.run(() => this.release()),
+      ).then((off) => (this.untrigger = off));
     }
   }
 
@@ -139,6 +172,14 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     void this.engine.stop();
     this.untrigger?.();
     clearTimeout(this.flashTimer);
+    clearTimeout(this.beamTimer);
+  }
+
+  toggleAim(): void {
+    const next = !this.aimOn();
+    this.aimOn.set(next);
+    try { localStorage.setItem(AIM_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    SoundManager.vibrate('button');
   }
 
   async start(): Promise<void> {
@@ -186,11 +227,20 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     SoundManager.vibrate('button');
   }
 
-  /** On-screen trigger or a volume key: arm for one read. */
+  /** On-screen trigger or a volume key press: beam on for one read. */
   trigger(): void {
     this.armed.set(true);
     this.lastText = '';
     SoundManager.vibrate('button');
+    clearTimeout(this.beamTimer);
+    if (!this.continuous()) this.beamTimer = setTimeout(() => this.armed.set(false), BEAM_MS);
+  }
+
+  /** Volume key let go: in trigger mode the beam goes off, like a handheld. */
+  release(): void {
+    if (this.continuous()) return;
+    clearTimeout(this.beamTimer);
+    this.armed.set(false);
   }
 
   // ------------------------------------------------------------ decoding
@@ -206,7 +256,9 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     }
     this.lastText = text;
     this.lastTextAt = now;
+    this.lastFormat = prettyFormat(hit.format);
     this.process(text);
+    this.lastFormat = '';
   }
 
   /** Every input (camera, keyboard wedge, typed) ends up here. */
@@ -309,6 +361,8 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
   }
 
   private emit(r: ScanResult): void {
+    if (!r.format && this.lastFormat && r.code) r = { ...r, format: this.lastFormat };
+    if (r.kind === 'ok') clearTimeout(this.beamTimer);
     this.result.set(r);
     this.history.update((h) => [r, ...h].slice(0, 200));
     SoundManager.feedback(r.kind === 'ok' ? 'scanSuccess' : r.kind === 'dup' ? 'duplicate' : 'scanError');

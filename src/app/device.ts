@@ -4,7 +4,7 @@ import { Capacitor, PluginListenerHandle, registerPlugin } from '@capacitor/core
 interface KfDevicePlugin {
   setTriggerEnabled(opts: { enabled: boolean }): Promise<void>;
   shareToWhatsApp(opts: { path: string; phone?: string; text?: string }): Promise<void>;
-  addListener(event: 'trigger', fn: (e: { key: 'up' | 'down' }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'trigger', fn: (e: { key: 'up' | 'down'; action?: 'press' | 'release' }) => void): Promise<PluginListenerHandle>;
 }
 
 const KfDevice = registerPlugin<KfDevicePlugin>('KfDevice');
@@ -13,13 +13,20 @@ export const isAndroidApp = () => Capacitor.isNativePlatform() && Capacitor.getP
 /** Volume keys are only captured while at least one subscriber wants them. */
 let subscribers = 0;
 
-/** Volume keys → scan trigger. Returns an unsubscribe function. */
-export async function onHardwareTrigger(fn: () => void): Promise<() => void> {
+/**
+ * Volume keys → scan trigger. `fn` runs when a key is pressed; the optional
+ * `onRelease` runs when it is let go (hold-to-scan, like a handheld trigger).
+ * Returns an unsubscribe function.
+ */
+export async function onHardwareTrigger(fn: () => void, onRelease?: () => void): Promise<() => void> {
   if (!isAndroidApp()) return () => {};
   try {
     subscribers++;
     if (subscribers === 1) await KfDevice.setTriggerEnabled({ enabled: true });
-    const handle = await KfDevice.addListener('trigger', () => fn());
+    const handle = await KfDevice.addListener('trigger', (e) => {
+      if (e?.action === 'release') onRelease?.();
+      else fn();
+    });
     let done = false;
     return () => {
       if (done) return;

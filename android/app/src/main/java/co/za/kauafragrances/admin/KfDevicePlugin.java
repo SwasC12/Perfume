@@ -31,12 +31,17 @@ public class KfDevicePlugin extends Plugin {
         instance = this;
     }
 
-    /** Called by MainActivity for every volume key press while enabled. */
-    boolean onTriggerKey(int keyCode, boolean down) {
+    /**
+     * Called by MainActivity for every volume key event while enabled. Sends
+     * "press" on the first key-down and "release" on key-up, so the app can act
+     * like a handheld trigger: hold to scan, let go to stop.
+     */
+    boolean onTriggerKey(int keyCode, boolean press, boolean release) {
         if (!triggerEnabled) return false;
-        if (down) {
+        if (press || release) {
             JSObject data = new JSObject();
             data.put("key", keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ? "up" : "down");
+            data.put("action", press ? "press" : "release");
             notifyListeners("trigger", data);
         }
         return true; // swallow the key so the volume doesn't change
