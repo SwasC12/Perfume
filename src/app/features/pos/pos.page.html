@@ -55,10 +55,11 @@
               @if (inCart()[t.p.id]; as n) { <span class="tile-qty">{{ n }}</span> }
               @else if (st) { <span [class]="'tile-stock ' + st.cls">{{ st.text }}</span> }
             </span>
-            <span class="tile-name">{{ t.p.name }}</span>
+            <!-- "Inspired By " is on almost every product: drop it so the scent name fits. -->
+            <span class="tile-name">{{ shortName(t.p.name) }}</span>
             <span class="tile-price">
-              @if (t.multi) { <span class="tile-sizes">{{ t.opts.length }} sizes</span> }
               {{ t.from | currency:'ZAR':'symbol-narrow':'1.0-0' }}
+              @if (t.multi) { <span class="tile-sizes">· {{ t.opts.length }} sizes</span> }
             </span>
           </button>
         }

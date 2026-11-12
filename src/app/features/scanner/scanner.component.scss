@@ -25,7 +25,11 @@
   z-index: 1000;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* minmax(0, 1fr): the column is exactly the screen width. Without it the
+     implicit column grows to the widest row's content and every row overflows. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas: 'top' 'modes' 'view' 'sheet';
+  overflow: hidden;
   background: var(--scn-bg);
   color: var(--scn-ink);
   font-family: inherit;
@@ -34,6 +38,7 @@
   overscroll-behavior: contain;
 }
 .scn.native { background: transparent; }
+.scn > * { min-width: 0; }
 
 /* ---------------- top bar ---------------- */
 .scn-top {
@@ -372,7 +377,7 @@
 .scn-modes {
   grid-area: modes;
   z-index: 3;
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
   padding: 6px 10px 8px;
   background: var(--scn-chrome);
   border-bottom: 1px solid var(--scn-line);
@@ -440,4 +445,15 @@
   height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); overflow: hidden;
   i { display: block; height: 100%; background: var(--scn-accent); transition: width 0.2s; }
   i.done { background: var(--scn-ok); }
+}
+
+/* ---------------- narrow phones (last, so it wins) ----------------
+   Close + title + count + 3 buttons must fit in ~360px without pushing
+   anything off-screen. */
+@media (max-width: 430px) {
+  .scn-top { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .scn-icon-btn { width: 40px; height: 40px; border-radius: 11px; }
+  .scn-count { min-width: 32px; height: 28px; padding: 0 8px; font-size: 14px; }
+  .scn-title strong { font-size: 16px; }
+  .scn-modes button { font-size: 12.5px; padding: 0 2px; }
 }

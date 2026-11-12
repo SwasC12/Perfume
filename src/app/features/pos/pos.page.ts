@@ -489,4 +489,6 @@ export class PosPage implements OnInit, OnDestroy {
   sync(): void { void this.queue.flush(); }
 
   onImgError(ev: Event): void { (ev.target as HTMLImageElement).style.visibility = 'hidden'; }
+  /** "Inspired By Armani SI" → "Armani SI" (the full name stays in the aria-label). */
+  shortName(name: string): string { return name.replace(/^inspired\s+by\s+/i, '') || name; }
 }

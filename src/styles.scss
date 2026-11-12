@@ -65,7 +65,7 @@
 /* ------------------------------------------------------------------ base */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-html, body { margin: 0; background: var(--bg); overscroll-behavior-y: none; }
+html, body { margin: 0; background: var(--bg); overscroll-behavior-y: none; overflow-x: clip; max-width: 100%; }
 body {
   font-family: var(--font);
   font-size: 15px;
@@ -205,7 +205,8 @@ a.card:hover, button.card:hover { border-color: #CBD5E1; }
 .btn-group { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- forms */
-input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea {
+/* :where() = zero specificity, so any screen's own input styles always win. */
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea) {
   width: 100%;
   min-height: var(--control-h);
   padding: 9px 12px;
@@ -218,13 +219,13 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
   -webkit-appearance: none;
   appearance: none;
 }
-textarea { min-height: 84px; resize: vertical; line-height: 1.45; }
-select {
+:where(textarea) { min-height: 84px; resize: vertical; line-height: 1.45; }
+:where(select) {
   padding-right: 34px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 12px center;
 }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+:where(input, select, textarea):focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 input::placeholder, textarea::placeholder { color: var(--faint); }
 input:disabled, select:disabled, textarea:disabled { background: var(--surface-2); color: var(--muted); }
 @media (pointer: coarse) { input, select, textarea { font-size: 16px !important; } } /* no iOS zoom */
