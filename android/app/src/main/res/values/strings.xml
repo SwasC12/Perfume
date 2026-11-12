@@ -4,4 +4,7 @@
     <string name="title_activity_main">Kaua Tracker</string>
     <string name="package_name">co.za.kauafragrances.admin</string>
     <string name="custom_url_scheme">co.za.kauafragrances.admin</string>
+    <string name="shortcut_scan">Scan</string>
+    <string name="shortcut_pos">New sale</string>
+    <string name="shortcut_orders">Orders</string>
 </resources>

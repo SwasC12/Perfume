@@ -175,6 +175,18 @@ export interface Discount {
   bundleReward?: BundleReward; // how each complete group is rewarded
   bundleValue?: number; // % off group / R off group / group price
   bundleFree?: number; // # cheapest items free per group (reward 'free')
+  bundleFreePercent?: number; // % off those "free" items (default 100 = free; 50 = half price)
+  // ---- Optional extras (absent on older codes = no effect) ----
+  startsAt?: number | null; // not valid before this (epoch ms)
+  freeDelivery?: boolean; // online delivery fee becomes 0 (no effect at the till)
+  productIds?: string[] | null; // only these products count
+  gender?: string | null; // only this Product.gender (men | women | unisex, any case)
+  category?: string | null; // only this Product.category (any case)
+  sizeKeys?: string[] | null; // only these sizes (size30 | size50 | size100)
+  minQty?: number | null; // minimum number of (qualifying) items
+  maxDiscount?: number | null; // cap on the discount in rand
+  oncePerCustomer?: boolean; // online: one use per account / email (checked by the Worker)
+  firstOrderOnly?: boolean; // online: no previous paid order (checked by the Worker)
   updatedAt?: number;
 }
 

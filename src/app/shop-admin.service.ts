@@ -206,6 +206,18 @@ export class ShopAdminService {
       mechanic: d.mechanic ?? 'order',
       bundleQty: d.bundleQty ?? null, bundleReward: d.bundleReward ?? null,
       bundleValue: d.bundleValue ?? null, bundleFree: d.bundleFree ?? null,
+      bundleFreePercent: d.bundleFreePercent ?? null,
+      // Optional extras (null / false / empty = no effect).
+      startsAt: d.startsAt ?? null,
+      freeDelivery: d.freeDelivery === true,
+      productIds: d.productIds?.length ? d.productIds : null,
+      gender: d.gender || null,
+      category: d.category || null,
+      sizeKeys: d.sizeKeys?.length ? d.sizeKeys : null,
+      minQty: d.minQty ?? null,
+      maxDiscount: d.maxDiscount ?? null,
+      oncePerCustomer: d.oncePerCustomer === true,
+      firstOrderOnly: d.firstOrderOnly === true,
       updatedAt: Date.now(),
     });
   }

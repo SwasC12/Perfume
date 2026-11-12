@@ -1,194 +1,315 @@
-<div class="page wide pos" [class.has-bar]="cart().length">
-  <header class="page-head compact">
-    <div>
-      <h1 class="page-title">Point of sale</h1>
-      <p class="page-sub">{{ filtered().length }} product{{ filtered().length === 1 ? '' : 's' }}</p>
+<!-- POS till. Phone: search + chips on top, product grid, fixed checkout bar.
+     Tablet/laptop: products left, cart panel right. Everything fits the viewport. -->
+<div class="till">
+  <!-- Search, scan, filters -->
+  <div class="till-top">
+    <div class="till-search">
+      <div class="search">
+        <app-icon name="search" [size]="16" />
+        <input type="search" placeholder="Search or scan barcode…" enterkeyhint="go" autocomplete="off"
+               aria-label="Search products or type a barcode"
+               [ngModel]="search()" (ngModelChange)="setSearch($event)" (keyup.enter)="onSearchEnter()" />
+      </div>
+      <button type="button" class="btn btn-primary scan" (click)="scanItems()" [disabled]="scanning()" aria-label="Scan items">
+        <app-icon name="qr" [size]="20" /><span>Scan</span>
+      </button>
     </div>
-    <div class="page-actions">
+
+    <div class="chips till-chips">
       @if (queue.pending() > 0) {
-        <button class="btn btn-sm pending" (click)="sync()" [disabled]="queue.syncing()" title="Sales saved on this device">
-          <app-icon name="cloud" [size]="16" />
-          {{ queue.syncing() ? 'Syncing…' : queue.pending() + ' offline · Sync' }}
+        <button type="button" class="chip pending" (click)="sync()" [disabled]="queue.syncing()" title="Sales saved on this device">
+          @if (queue.syncing()) { <kf-loader [size]="14" inline /> Syncing… }
+          @else { <app-icon name="cloud" [size]="14" /> {{ queue.pending() }} offline · Sync }
         </button>
       }
-      <button class="btn btn-soft" (click)="scanItems()" [disabled]="scanning()">
-        <app-icon name="qr" [size]="18" /> Scan items
-      </button>
-    </div>
-  </header>
-
-  <div class="split pos-split">
-    <!-- Products -->
-    <section class="stack">
-      <div class="toolbar sticky pos-toolbar">
-        <div class="search">
-          <app-icon name="search" [size]="16" />
-          <input type="search" placeholder="Search name, inspired by or barcode…" enterkeyhint="done"
-                 [ngModel]="search()" (ngModelChange)="setSearch($event)" (keyup.enter)="onSearchEnter()" />
-        </div>
-      </div>
-
-      @if (shop.loadingProducts() && !shop.products().length) {
-        <div class="pos-grid">
-          @for (i of [1,2,3,4,5,6]; track i) { <div class="skeleton" style="height: 168px"></div> }
-        </div>
-      } @else if (!filtered().length) {
-        <div class="empty">
-          <div class="empty-icon"><app-icon name="package" [size]="24" /></div>
-          <h3>No products</h3>
-          <p>{{ search() ? 'Nothing matches “' + search() + '”.' : 'Add products first.' }}</p>
-        </div>
-      } @else {
-        <div class="pos-grid">
-          @for (t of shown(); track t.p.id) {
-            <div class="tile" [class.in]="inCart()[t.p.id]">
-              <button type="button" class="tile-main" (click)="add(t.p)" [attr.aria-label]="'Add ' + t.p.name">
-                <img [src]="t.img" alt="" width="96" height="96" loading="lazy" decoding="async" (error)="onImgError($event)" />
-                <span class="tile-name">{{ t.p.name }}</span>
-                <span class="tile-price">
-                  @if (t.multi) { <span class="muted">from </span> }{{ t.from | currency:'ZAR':'symbol-narrow':'1.0-2' }}
-                </span>
-                @if (t.out) { <span class="tile-out">Out of stock</span> }
-                @if (inCart()[t.p.id]; as n) { <span class="tile-qty">{{ n }}</span> }
-              </button>
-              @if (t.multi) {
-                <div class="tile-sizes">
-                  @for (o of t.opts; track o.key) {
-                    <button type="button" (click)="add(t.p, o.key)" [class.na]="!o.size.inStock">{{ o.size.size }}</button>
-                  }
-                </div>
-              }
-            </div>
-          }
-        </div>
-        @if (filtered().length > shown().length) {
-          <button class="btn btn-block" (click)="limit.set(limit() + 120)">Show more ({{ filtered().length - shown().length }})</button>
-        }
+      <button type="button" class="chip" [class.on]="!gender() && !category()" (click)="gender.set(''); category.set('')">All</button>
+      @for (g of genders(); track g) {
+        <button type="button" class="chip" [class.on]="gender() === g" (click)="setGender(g)">{{ g }}</button>
       }
-    </section>
-
-    <!-- Cart (tablet / laptop) -->
-    <aside class="card cart-side hide-phone">
-      <div class="card-head">
-        <h2>Current sale</h2>
-        @if (cart().length) { <button class="btn btn-ghost btn-sm" (click)="clear()">Clear</button> }
-      </div>
-      <div class="card-body">
-        <ng-container [ngTemplateOutlet]="cartTpl" />
-      </div>
-    </aside>
+      @if (genders().length && categories().length) { <span class="chip-sep" aria-hidden="true"></span> }
+      @for (c of categories(); track c) {
+        <button type="button" class="chip" [class.on]="category() === c" (click)="setCategory(c)">{{ c }}</button>
+      }
+    </div>
   </div>
 
-  <!-- Phone: summary bar opens the cart -->
-  @if (cart().length) {
-    <div class="cart-bar only-phone">
-      <button type="button" class="cart-bar-info" (click)="cartOpen.set(true)">
-        <span class="badge ok">{{ itemCount() }}</span>
-        <span class="cart-bar-total">{{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
-        <app-icon name="chevron-down" [size]="16" class="flip" />
-      </button>
-      <button class="btn btn-primary" (click)="cartOpen.set(true)">Checkout</button>
+  <!-- Products -->
+  <div class="till-products">
+    @if (shop.loadingProducts() && !shop.products().length) {
+      <kf-loader label="Loading products…" />
+    } @else if (!filtered().length) {
+      <div class="empty">
+        <div class="empty-icon"><app-icon name="package" [size]="24" /></div>
+        <h3>No products</h3>
+        <p>{{ search() ? 'Nothing matches “' + search() + '”.' : filtering() ? 'Nothing in this filter.' : 'Add products first.' }}</p>
+        @if (filtering()) { <button type="button" class="btn" (click)="clearFilters()">Show all</button> }
+      </div>
+    } @else {
+      <div class="grid-tiles">
+        @for (t of shown(); track t.p.id) {
+          <button type="button" class="tile" [class.in]="inCart()[t.p.id]" [class.out]="t.out" [class.flash]="flash() === t.p.id"
+                  (click)="tap(t)" [attr.aria-label]="'Add ' + t.p.name">
+            <span class="tile-top">
+              <img [src]="t.img" alt="" width="40" height="40" loading="lazy" decoding="async" (error)="onImgError($event)" />
+              @let st = stockLabel(t);
+              @if (inCart()[t.p.id]; as n) { <span class="tile-qty">{{ n }}</span> }
+              @else if (st) { <span [class]="'tile-stock ' + st.cls">{{ st.text }}</span> }
+            </span>
+            <span class="tile-name">{{ t.p.name }}</span>
+            <span class="tile-price">
+              @if (t.multi) { <span class="tile-sizes">{{ t.opts.length }} sizes</span> }
+              {{ t.from | currency:'ZAR':'symbol-narrow':'1.0-0' }}
+            </span>
+          </button>
+        }
+      </div>
+      @if (filtered().length > shown().length) {
+        <button type="button" class="btn btn-block more" (click)="limit.set(limit() + 120)">Show more ({{ filtered().length - shown().length }})</button>
+      }
+    }
+  </div>
+
+  <!-- Cart panel (tablet / laptop) -->
+  <aside class="till-cart card">
+    <div class="card-head">
+      <h2>Current sale @if (itemCount()) { <span class="badge">{{ itemCount() }}</span> }</h2>
+      @if (cart().length) { <button type="button" class="btn btn-ghost btn-sm" (click)="clear()">Clear</button> }
     </div>
-  }
+    <div class="cart-body">
+      @if (!cart().length) {
+        <p class="muted small center cart-empty">Tap products or scan to add them to the sale.</p>
+      } @else {
+        <ng-container [ngTemplateOutlet]="linesTpl" />
+      }
+    </div>
+    @if (cart().length) {
+      <div class="cart-foot">
+        <ng-container [ngTemplateOutlet]="extrasTpl" />
+        <ng-container [ngTemplateOutlet]="totalsTpl" />
+        <button type="button" class="btn btn-primary btn-lg btn-block" (click)="openPay()">
+          Charge {{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}
+        </button>
+      </div>
+    }
+  </aside>
+
+  <!-- Phone checkout bar: always visible -->
+  <div class="till-bar">
+    <button type="button" class="bar-info" (click)="sheet.set('cart')" [disabled]="!cart().length" aria-label="View sale">
+      <span class="bar-count" [class.on]="itemCount()">{{ itemCount() }}</span>
+      <span class="bar-txt">
+        <span class="bar-label">{{ itemCount() ? (itemCount() === 1 ? '1 item' : itemCount() + ' items') + ' · view' : 'No items yet' }}</span>
+        <strong class="num">{{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
+      </span>
+      @if (cart().length) { <app-icon name="chevron-down" [size]="18" class="flip" /> }
+    </button>
+    <button type="button" class="btn btn-primary btn-lg charge" (click)="openPay()" [disabled]="!cart().length">Charge</button>
+  </div>
 </div>
 
-@if (cartOpen()) {
-  <kf-sheet title="Current sale" [subtitle]="itemCount() + ' item' + (itemCount() === 1 ? '' : 's')" (closed)="cartOpen.set(false)">
-    <ng-container [ngTemplateOutlet]="cartTpl" />
+<!-- Size picker -->
+@if (picker(); as t) {
+  <kf-sheet [title]="t.p.name" [subtitle]="t.p.inspiredBy ? 'Inspired by ' + t.p.inspiredBy : 'Choose a size'" (closed)="picker.set(null)">
+    <div class="sizes">
+      @for (o of t.opts; track o.key) {
+        <button type="button" class="size-btn" [class.na]="!o.avail" (click)="pick(t, o.key)">
+          <span class="size-name">{{ o.size.size }}</span>
+          <span class="size-stock">{{ optStock(o) }}</span>
+          <span class="size-price num">{{ o.price | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
+        </button>
+      }
+    </div>
+  </kf-sheet>
+}
+
+<!-- Cart (phone) -->
+@if (sheet() === 'cart') {
+  <kf-sheet title="Current sale" [subtitle]="itemCount() + ' item' + (itemCount() === 1 ? '' : 's') + ' · swipe left to remove'" (closed)="sheet.set(null)">
+    <div class="stack">
+      <ng-container [ngTemplateOutlet]="linesTpl" />
+      <ng-container [ngTemplateOutlet]="extrasTpl" />
+      <ng-container [ngTemplateOutlet]="totalsTpl" />
+    </div>
     <ng-container sheet-actions>
-      <button class="btn" (click)="clear()">Clear</button>
-      <button class="btn" (click)="cartOpen.set(false)">Add more</button>
+      <button type="button" class="btn" (click)="clear()">Clear</button>
+      <button type="button" class="btn btn-primary grow2" (click)="openPay()">Charge {{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</button>
     </ng-container>
   </kf-sheet>
 }
 
-<ng-template #cartTpl>
-  @if (!cart().length) {
-    <p class="muted small center cart-empty">Tap products to add them to the sale.</p>
-  } @else {
-    <div class="stack">
-      <div class="lines">
-        @for (l of cart(); track lineKey(l)) {
-          <div class="line">
-            <div class="line-main">
-              <span class="line-name">{{ l.product.name }}</span>
+<!-- Payment -->
+@if (sheet() === 'pay') {
+  <kf-sheet title="Take payment" [subtitle]="itemCount() + ' item' + (itemCount() === 1 ? '' : 's') + (customer().trim() ? ' · ' + customer().trim() : '')" (closed)="sheet.set(null)">
+    <div class="pay">
+      <div class="pay-total">
+        <span class="muted small">Total due</span>
+        <strong class="num">{{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
+        @if (discountAmount() > 0) { <span class="tiny text-ok">incl. −{{ discountAmount() | currency:'ZAR':'symbol-narrow':'1.0-2' }} ({{ discount()!.code }})</span> }
+      </div>
+
+      <div class="pay-method" role="radiogroup" aria-label="Payment method">
+        <button type="button" role="radio" [attr.aria-checked]="payment() === 'cash'" [class.on]="payment() === 'cash'" (click)="setPayment('cash')">
+          <app-icon name="wallet" [size]="20" /> Cash
+        </button>
+        <button type="button" role="radio" [attr.aria-checked]="payment() === 'card'" [class.on]="payment() === 'card'" (click)="setPayment('card')">
+          <app-icon name="zap" [size]="20" /> Card
+        </button>
+      </div>
+
+      @if (payment() === 'cash') {
+        <div class="tender">
+          <div class="tender-row">
+            <span class="muted small">Received</span>
+            <strong class="num" [class.faint]="!tendered()">R {{ tendered() || '0' }}</strong>
+          </div>
+          <div class="tender-row change" [class.short]="cashShort()">
+            <span class="small">{{ cashShort() ? 'Short by' : 'Change' }}</span>
+            <strong class="num">{{ (cashShort() ? total() - (cash() || 0) : change()) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
+          </div>
+        </div>
+        <div class="quick">
+          @for (v of quickCash(); track v; let first = $first) {
+            <button type="button" [class.on]="cash() === v" (click)="quick(v)">{{ first ? 'Exact' : (v | currency:'ZAR':'symbol-narrow':'1.0-0') }}</button>
+          }
+        </div>
+        <div class="keypad">
+          @for (k of keys; track k) {
+            <button type="button" (click)="key(k)" [attr.aria-label]="k === 'del' ? 'Delete' : k">
+              @if (k === 'del') { <app-icon name="chevron-left" [size]="22" /> } @else { {{ k }} }
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="notice card-note">
+          <app-icon name="zap" [size]="18" />
+          <span>Take {{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }} on the card machine, then tap <b>Complete sale</b>.</span>
+        </div>
+      }
+    </div>
+    <ng-container sheet-actions>
+      <button type="button" class="btn" (click)="backFromPay()">Back</button>
+      <button type="button" class="btn btn-primary grow2" (click)="checkout()" [disabled]="cashShort()">
+        <app-icon name="check" [size]="18" /> Complete sale
+      </button>
+    </ng-container>
+  </kf-sheet>
+}
+
+<!-- Sale complete -->
+@if (done(); as d) {
+  <div class="done" role="dialog" aria-modal="true" aria-label="Sale complete">
+    <div class="done-body">
+      <span class="done-tick"><app-icon name="check" [size]="48" /></span>
+      <h2>Sale complete</h2>
+      <strong class="done-total num">{{ d.total | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
+      <span class="muted">{{ d.items }} item{{ d.items === 1 ? '' : 's' }} · {{ d.method === 'cash' ? 'Cash' : 'Card' }}</span>
+      @if (d.change > 0) {
+        <div class="done-change">
+          <span>Give change</span>
+          <strong class="num">{{ d.change | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
+        </div>
+      }
+      <div class="done-ref">
+        @if (d.reference) {
+          <span class="mono">{{ d.reference }}</span>
+          @if (d.queued) { <span class="pill warn">Saved offline · will sync</span> } @else { <span class="pill ok">Recorded</span> }
+        } @else {
+          <kf-loader [size]="18" inline label="Saving…" />
+        }
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-lg btn-block done-btn" (click)="newSale()">
+      <app-icon name="plus" [size]="18" /> New sale
+    </button>
+  </div>
+}
+
+<!-- ===== Shared pieces ===== -->
+<ng-template #linesTpl>
+  <div class="lines">
+    @for (l of cart(); track lineKey(l)) {
+      <div class="line-wrap">
+        <span class="line-bin" aria-hidden="true"><app-icon name="trash" [size]="18" /></span>
+        <div class="line"
+             [style.transform]="swipeKey() === lineKey(l) ? 'translateX(' + swipeDx() + 'px)' : null"
+             [class.dragging]="swipeKey() === lineKey(l)"
+             (pointerdown)="swipeStart(l, $event)" (pointermove)="swipeMove($event)"
+             (pointerup)="swipeEnd(l)" (pointercancel)="swipeEnd(l)">
+          <div class="line-main">
+            <span class="line-name">{{ l.product.name }}</span>
+            <span class="line-sub">
               @if (sizesOf(l.product).length > 1) {
                 <select class="line-size" [ngModel]="l.sizeKey" (ngModelChange)="changeSize(l, $event)" aria-label="Size">
                   @for (o of sizesOf(l.product); track o.key) { <option [value]="o.key">{{ o.size.size }}</option> }
                 </select>
               } @else if (sizeLabel(l)) {
-                <span class="tiny muted">{{ sizeLabel(l) }}</span>
+                <span>{{ sizeLabel(l) }}</span>
               }
-            </div>
-            <div class="stepper">
-              <button type="button" (click)="setQty(l, l.qty - 1)" [attr.aria-label]="l.qty === 1 ? 'Remove' : 'Less'">
-                <app-icon [name]="l.qty === 1 ? 'trash' : 'minus'" [size]="14" />
-              </button>
-              <span class="num">{{ l.qty }}</span>
-              <button type="button" (click)="setQty(l, l.qty + 1)" aria-label="More"><app-icon name="plus" [size]="14" /></button>
-            </div>
-            <span class="line-total num">{{ unit(l) * l.qty | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
+              <span class="num">{{ unit(l) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
+            </span>
           </div>
-        }
+          <div class="stepper">
+            <button type="button" (click)="setQty(l, l.qty - 1)" [attr.aria-label]="l.qty === 1 ? 'Remove' : 'Less'">
+              <app-icon [name]="l.qty === 1 ? 'trash' : 'minus'" [size]="16" />
+            </button>
+            <span class="num">{{ l.qty }}</span>
+            <button type="button" (click)="setQty(l, l.qty + 1)" aria-label="More"><app-icon name="plus" [size]="16" /></button>
+          </div>
+          <span class="line-total num">{{ unit(l) * l.qty | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span>
+        </div>
       </div>
+    }
+  </div>
+</ng-template>
 
-      <div class="field">
-        <label for="pos-cust">Customer (optional)</label>
-        <input id="pos-cust" type="text" placeholder="Walk-in" autocomplete="off" [ngModel]="customer()" (ngModelChange)="customer.set($event)" />
+<ng-template #extrasTpl>
+  <div class="extras">
+    <!-- Promo -->
+    @if (!promoOpen() && !discount()) {
+      <button type="button" class="extra-row" (click)="promoOpen.set(true)">
+        <app-icon name="tag" [size]="16" /><span>Add promo code</span><app-icon name="plus" [size]="16" />
+      </button>
+    } @else if (discount()) {
+      <div class="extra-row static">
+        <app-icon name="tag" [size]="16" />
+        <span><b class="mono">{{ discount()!.code }}</b> <span class="text-ok">−{{ discountAmount() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></span>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="clearPromo()">Remove</button>
       </div>
-
+    } @else {
       <div class="field">
-        <label for="pos-promo">Promo code</label>
         <div class="row nowrap">
-          <input id="pos-promo" type="text" placeholder="Code" autocomplete="off" class="upper"
-                 [ngModel]="promo()" (ngModelChange)="promo.set($event)" [disabled]="!!discount()" (keyup.enter)="applyPromo()" />
-          @if (discount()) {
-            <button class="btn" (click)="clearPromo()">Remove</button>
-          } @else {
-            <button class="btn" (click)="applyPromo()" [disabled]="!promo().trim() || promoBusy()">{{ promoBusy() ? '…' : 'Apply' }}</button>
-          }
+          <input type="text" placeholder="Promo code" autocomplete="off" class="upper" aria-label="Promo code" enterkeyhint="done"
+                 [ngModel]="promo()" (ngModelChange)="promo.set($event)" (keyup.enter)="applyPromo()" />
+          <button type="button" class="btn" (click)="applyPromo()" [disabled]="!promo().trim() || promoBusy()">
+            @if (promoBusy()) { <kf-loader [size]="16" inline /> } @else { Apply }
+          </button>
+          <button type="button" class="btn btn-ghost btn-icon" (click)="promoOpen.set(false); promoError.set(null)" aria-label="Close promo"><app-icon name="x" [size]="16" /></button>
         </div>
         @if (promoError()) { <span class="error">{{ promoError() }}</span> }
       </div>
+    }
 
-      <div class="field">
-        <span class="field-label">Payment</span>
-        <div class="seg block">
-          <button type="button" [class.on]="payment() === 'cash'" (click)="payment.set('cash')">Cash</button>
-          <button type="button" [class.on]="payment() === 'card'" (click)="payment.set('card')">Card</button>
-        </div>
-      </div>
-
-      <div class="totals">
-        <div><span class="muted">Subtotal</span><span class="num">{{ subtotal() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
-        @if (discountAmount() > 0) {
-          <div class="text-ok"><span>Discount ({{ discount()!.code }})</span><span class="num">−{{ discountAmount() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
-        }
-        <div class="grand"><span>Total</span><span class="num">{{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
-      </div>
-
-      @if (payment() === 'cash') {
-        <div class="field">
-          <label for="pos-cash">Cash received</label>
-          <input id="pos-cash" type="number" min="0" step="any" inputmode="decimal" placeholder="0"
-                 [ngModel]="cash()" (ngModelChange)="cash.set($event === '' ? null : $event)" />
-          <div class="chips">
-            @for (v of quickCash(); track v; let first = $first) {
-              <button type="button" class="chip" [class.on]="cash() === v" (click)="cash.set(v)">{{ first ? 'Exact' : (v | currency:'ZAR':'symbol-narrow':'1.0-0') }}</button>
-            }
-          </div>
-        </div>
-        @if (cash()) {
-          <div class="change" [class.short]="cashShort()">
-            <span>{{ cashShort() ? 'Short by' : 'Change' }}</span>
-            <strong class="num">{{ (cashShort() ? total() - (cash() || 0) : change()) | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong>
-          </div>
-        }
-      }
-
-      <button class="btn btn-primary btn-lg btn-block" (click)="checkout()" [disabled]="cashShort()">
-        Charge {{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}
+    <!-- Customer -->
+    @if (!customerOpen() && !customer().trim()) {
+      <button type="button" class="extra-row" (click)="customerOpen.set(true)">
+        <app-icon name="user" [size]="16" /><span>Add customer name</span><app-icon name="plus" [size]="16" />
       </button>
-    </div>
-  }
+    } @else {
+      <div class="row nowrap">
+        <input type="text" placeholder="Customer name (optional)" autocomplete="off" aria-label="Customer name" enterkeyhint="done"
+               [ngModel]="customer()" (ngModelChange)="customer.set($event)" />
+        <button type="button" class="btn btn-ghost btn-icon" (click)="customer.set(''); customerOpen.set(false)" aria-label="Remove customer"><app-icon name="x" [size]="16" /></button>
+      </div>
+    }
+  </div>
+</ng-template>
+
+<ng-template #totalsTpl>
+  <div class="totals">
+    @if (discountAmount() > 0) {
+      <div><span class="muted">Subtotal</span><span class="num">{{ subtotal() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+      <div class="text-ok"><span>Discount ({{ discount()!.code }})</span><span class="num">−{{ discountAmount() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+    }
+    <div class="grand"><span>Total</span><span class="num">{{ total() | currency:'ZAR':'symbol-narrow':'1.0-2' }}</span></div>
+  </div>
 </ng-template>

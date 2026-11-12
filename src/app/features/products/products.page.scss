@@ -9,6 +9,15 @@
 .li-end .switch { min-height: 24px; }
 .notify { flex: none; }
 
+/* Phones: denser rows so more products fit on screen. */
+@media (max-width: 767px) {
+  .list-item { padding: 7px 12px; min-height: 54px; gap: 10px; contain-intrinsic-size: auto 54px; }
+  .pl-link { gap: 10px; margin: -7px 0; padding: 7px 0; }
+  .pl-link .thumb { width: 40px; height: 40px; }
+  .li-title { font-size: 14px; }
+  .li-sub { font-size: 12.5px; }
+}
+
 .sk-line { display: block; height: 12px; width: 60%; }
 .sk-line.short { width: 35%; }
 

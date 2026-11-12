@@ -89,6 +89,22 @@ then tablet (>=768px) and laptop (>=1200px, permanent sidebar).
 - Text: `muted`, `faint`, `small`, `tiny`, `bold`, `mono`, `num`,
   `text-ok/warn/danger`, `ellipsis`, `center`.
 
+## Loading states
+
+- `LoaderComponent` (`<kf-loader>`, shared/loader.component.ts) is the
+  perfume-bottle loader. Use it for whole-page / section loads
+  (`<kf-loader label="Loading orders…" />`), inside busy buttons
+  (`<kf-loader [size]="18" inline />`) and for progress (`[progress]="0.4"`).
+  Skeletons (`.skeleton`) stay fine for list placeholders.
+
+## No unnecessary scrolling (owner's rule)
+
+- The primary action of a screen is always visible without scrolling
+  (sticky `.action-bar`, fixed bottom bar, or in the header).
+- On phones, don't stack long forms: split into steps/tabs/collapsible
+  sections, show the essentials first, tuck rarely used fields away.
+- Prefer dense, scannable rows over big cards on phones.
+
 ## Rules
 
 - Phone first: one column, big tap targets, primary action reachable.

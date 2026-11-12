@@ -47,6 +47,22 @@ export function numOrNull(v: unknown): number | null {
   return v === null || v === undefined || v === '' || isNaN(v as number) ? null : Number(v);
 }
 
+/** Bulk per-size prices the Products → Tools sheet remembers (localStorage 'kf.bulkPrices'). */
+export function loadBulkPrices(): Record<'size30' | 'size50' | 'size100', number | null> {
+  const out: Record<'size30' | 'size50' | 'size100', number | null> = { size30: null, size50: null, size100: null };
+  try {
+    const raw = localStorage.getItem('kf.bulkPrices');
+    if (raw) {
+      const p = JSON.parse(raw) as Record<string, unknown>;
+      for (const k of ['size30', 'size50', 'size100'] as const) {
+        const n = numOrNull(p[k]);
+        out[k] = n != null && n > 0 ? n : null;
+      }
+    }
+  } catch { /* ignore */ }
+  return out;
+}
+
 export function marginLabel(price: number | null, cost: number | null): string {
   const pr = Number(price) || 0, c = Number(cost) || 0;
   if (!pr) return '—';

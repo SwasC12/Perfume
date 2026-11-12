@@ -146,6 +146,14 @@ export class AppComponent {
 
   private initBack(): void {
     if (!Capacitor.isNativePlatform()) return;
+    // Long-press shortcuts (kauatracker://scan, //pos, //orders) open that screen.
+    const open = (url?: string) => this.zone.run(() => {
+      const m = /^kauatracker:\/\/([a-z-]+)/i.exec(url || '');
+      const allowed = ['scan', 'pos', 'orders', 'products', 'dashboard'];
+      if (m && allowed.includes(m[1].toLowerCase())) void this.router.navigateByUrl('/' + m[1].toLowerCase());
+    });
+    void CapApp.addListener('appUrlOpen', (e) => open(e.url));
+    void CapApp.getLaunchUrl().then((r) => open(r?.url)).catch(() => {});
     void CapApp.addListener('backButton', () => this.zone.run(() => {
       if (!this.handleBack()) void CapApp.minimizeApp();
     }));

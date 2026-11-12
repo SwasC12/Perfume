@@ -17,6 +17,22 @@
   <link rel="manifest" href="manifest.webmanifest">
 </head>
 <body>
-  <app-root></app-root>
+  <!-- Splash: a perfume bottle filling while the app starts (replaced by Angular). -->
+  <app-root>
+    <style>
+      .kf-splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#F4F6FA;font:600 14px system-ui,sans-serif;color:#64748B}
+      .kf-splash .lq{animation:kfFill 1.8s cubic-bezier(.45,.05,.35,1) infinite}
+      @keyframes kfFill{0%{transform:translateY(37px)}75%,100%{transform:translateY(4px)}}
+    </style>
+    <div class="kf-splash">
+      <svg width="64" height="80" viewBox="0 0 48 60" aria-hidden="true">
+        <defs><clipPath id="kfs"><path d="M10 26 Q10 20 16 20 H32 Q38 20 38 26 V52 Q38 57 33 57 H15 Q10 57 10 52 Z"/></clipPath></defs>
+        <rect x="19" y="4" width="10" height="7" rx="2" fill="#123B70"/><rect x="21" y="11" width="6" height="9" rx="1" fill="#C9D6E6"/>
+        <g clip-path="url(#kfs)"><rect class="lq" x="0" y="18" width="48" height="50" fill="#E0A93B"/></g>
+        <path d="M10 26 Q10 20 16 20 H32 Q38 20 38 26 V52 Q38 57 33 57 H15 Q10 57 10 52 Z" fill="none" stroke="#123B70" stroke-width="2.4"/>
+      </svg>
+      Kaua Tracker
+    </div>
+  </app-root>
 </body>
 </html>

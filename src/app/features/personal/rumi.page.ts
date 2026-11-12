@@ -1,13 +1,20 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { RumiProduct } from '../../models';
-import { RumiService } from '../../rumi.service';
+import { RumiItem, RumiService } from '../../rumi.service';
+import { AuthService } from '../../auth.service';
+import { ShopAdminService } from '../../shop-admin.service';
+import { LoaderComponent } from '../../shared/loader.component';
 import { WishlistService } from '../../wishlist.service';
 import { UiService } from '../../core/ui.service';
 import { IconComponent } from '../../icon.component';
 import { SheetComponent } from '../../shared/sheet.component';
 import { agoLabel, hideBrokenImg, numOrNull } from './personal-util';
+
+/** "Inspired By Al Kabah" and "Al Kabah" both → "al kabah". */
+function norm(s: string): string { return s.toLowerCase().replace(/^inspireds+bys+/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
 
 type RumiSort = 'name' | 'price-asc' | 'price-desc' | 'stock';
 
@@ -25,7 +32,7 @@ const PAGE = 60;
 
 @Component({
   standalone: true,
-  imports: [FormsModule, CurrencyPipe, IconComponent, SheetComponent],
+  imports: [FormsModule, CurrencyPipe, IconComponent, SheetComponent, LoaderComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -46,6 +53,17 @@ const PAGE = 60;
         </div>
       </header>
 
+      @if (svc.progress(); as pr) {
+        <div class="card sync-card">
+          <kf-loader [size]="34" inline [progress]="pr.total ? pr.done / pr.total : null" />
+          <div class="sync-txt">
+            <strong>Syncing from Rumi…</strong>
+            <span class="small muted">{{ pr.total ? pr.done + " of " + pr.total + " products" : "Reading the catalogue" }}</span>
+            <div class="bar"><i [style.width.%]="pr.total ? (pr.done / pr.total) * 100 : 4"></i></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" (click)="svc.cancel()">Cancel</button>
+        </div>
+      }
       @if (svc.error()) { <div class="notice danger">{{ svc.error() }}</div> }
 
       <div class="toolbar">
@@ -63,14 +81,13 @@ const PAGE = 60;
       <div class="chips">
         <button class="chip" [class.on]="!inStockOnly()" (click)="setInStock(false)">All <span class="n">{{ svc.products().length }}</span></button>
         <button class="chip" [class.on]="inStockOnly()" (click)="setInStock(true)">In stock <span class="n">{{ svc.inStockCount() }}</span></button>
+        @for (c of categories(); track c.name) {
+          <button class="chip" [class.on]="category() === c.name" (click)="setCategory(category() === c.name ? '' : c.name)">{{ c.name }} <span class="n">{{ c.count }}</span></button>
+        }
       </div>
 
       @if (svc.loading() && svc.products().length === 0) {
-        <div class="grid">
-          @for (s of skeletons; track s) {
-            <div class="card pc"><div class="pc-img skeleton"></div><div class="pc-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line short"></div></div></div>
-          }
-        </div>
+        <kf-loader label="Pouring in Rumi's catalogue…" />
       } @else if (filtered().length === 0) {
         <div class="card">
           <div class="empty">
@@ -81,7 +98,7 @@ const PAGE = 60;
           </div>
         </div>
       } @else {
-        <div class="grid">
+        <div class="grid rumi-grid">
           @for (p of visible(); track p.id) {
             <article class="card pc" [class.oos]="!p.inStock">
               <div class="pc-img">
@@ -102,6 +119,7 @@ const PAGE = 60;
               </div>
               <div class="pc-body">
                 <h3 class="pc-name">{{ p.name }}</h3>
+                @if (asItem(p).category) { <span class="tiny faint">{{ asItem(p).category }}</span> }
                 <p class="small muted">
                   @if (p.fromPrice != null) { from <strong class="num">{{ p.fromPrice | currency:'ZAR':'symbol-narrow':'1.0-2' }}</strong> } @else { No price }
                 </p>
@@ -109,9 +127,16 @@ const PAGE = 60;
               </div>
               <div class="pc-foot">
                 @if (p.permalink) {
-                  <a class="btn btn-soft btn-sm" [href]="p.permalink" target="_blank" rel="noopener"><app-icon name="link" [size]="15" /> Open on Rumi</a>
+                  <a class="btn btn-soft btn-icon btn-sm" [href]="p.permalink" target="_blank" rel="noopener" aria-label="Open on Rumi" title="Open on Rumi"><app-icon name="link" [size]="15" /></a>
                 }
                 <span class="spacer"></span>
+                @if (isAdmin()) {
+                  @if (inShop().has(key(p))) {
+                    <span class="pill ok plain" title="Already in your shop">In shop</span>
+                  } @else {
+                    <button type="button" class="btn btn-primary btn-sm" (click)="addToShop(p)" title="Add to my shop"><app-icon name="plus" [size]="15" /> Shop</button>
+                  }
+                }
                 <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openEdit(p)" aria-label="Edit" title="Edit"><app-icon name="edit" [size]="16" /></button>
                 <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="remove(p)" aria-label="Remove" title="Remove"><app-icon name="trash" [size]="16" /></button>
               </div>
@@ -162,6 +187,16 @@ const PAGE = 60;
   `,
   styles: [`
     .sort { width: auto; flex: none; max-width: 200px; }
+    .sync-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+    .sync-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    @media (max-width: 559px) {
+      .rumi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .rumi-grid .pc-img { height: 120px; }
+      .rumi-grid .pc-body { padding: 8px 10px 2px; }
+      .rumi-grid .pc-name { font-size: 13.5px; }
+      .rumi-grid .pc-foot { padding: 6px 8px 8px; flex-wrap: wrap; }
+      .rumi-grid .pc-notes { display: none; }
+    }
     .spin { animation: spin .9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -191,6 +226,39 @@ const PAGE = 60;
 })
 export class RumiPage {
   readonly svc = inject(RumiService);
+  private auth = inject(AuthService);
+  private shop = inject(ShopAdminService);
+  private router = inject(Router);
+  readonly isAdmin = computed(() => this.auth.isAdmin);
+  readonly category = signal('');
+
+  /** Categories found on Rumi, biggest first. */
+  readonly categories = computed(() => {
+    const m = new Map<string, number>();
+    for (const p of this.svc.products()) { const c = (p as RumiItem).category; if (c) m.set(c, (m.get(c) || 0) + 1); }
+    return [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  });
+
+  /** Fragrances already in the Kaua shop (by "inspired by" name). */
+  readonly inShop = computed(() => {
+    const s = new Set<string>();
+    for (const p of this.shop.products()) { s.add(norm(p.inspiredBy || '')); s.add(norm(p.name)); }
+    s.delete('');
+    return s;
+  });
+
+  key(p: RumiProduct): string { return norm(p.name); }
+  asItem(p: RumiProduct): RumiItem { return p as RumiItem; }
+  setCategory(c: string): void { this.category.set(c); this.limit.set(PAGE); }
+
+  /** Start a new shop product from this Rumi oil. */
+  addToShop(p: RumiProduct): void {
+    const it = p as RumiItem;
+    const inspiredBy = p.name.replace(/^inspireds+bys+/i, '').trim();
+    void this.router.navigate(['/products', 'new'], {
+      state: { prefill: { name: 'Inspired By ' + inspiredBy, inspiredBy, description: it.description || '', imageUrl: p.imageUrl || '', category: it.category || '' } },
+    });
+  }
   private wish = inject(WishlistService);
   private ui = inject(UiService);
 
@@ -214,6 +282,7 @@ export class RumiPage {
     const list = this.svc
       .products()
       .filter((p) => (inStockOnly ? p.inStock : true))
+      .filter((p) => (this.category() ? (p as RumiItem).category === this.category() : true))
       .filter((p) => (q ? p.name.toLowerCase().includes(q) : true));
     const price = (p: RumiProduct) => (p.fromPrice == null ? Number.POSITIVE_INFINITY : p.fromPrice);
     return [...list].sort((a, b) => {

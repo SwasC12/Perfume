@@ -6,9 +6,12 @@ import { EmailService } from '../../email.service';
 import { UiService } from '../../core/ui.service';
 import { ScanService } from '../../core/scan.service';
 import { IconComponent } from '../../icon.component';
+import { LoaderComponent } from '../../shared/loader.component';
 import { imageFromFile } from '../../cloudinary';
 import { PRODUCT_SIZE_KEYS, PRODUCT_SIZE_LABELS, Product, ProductSize, ProductSizeKey } from '../../models';
-import { hideBrokenImg, isDataUrl, isSellable, marginLabel, notifyPendingRestock, numOrNull, pendingRestockCount } from './product-util';
+import {
+  hideBrokenImg, isDataUrl, isSellable, loadBulkPrices, marginLabel, notifyPendingRestock, numOrNull, pendingRestockCount,
+} from './product-util';
 
 interface ProductSizeForm {
   size: string;
@@ -44,9 +47,20 @@ interface ProductForm {
   longDescription: string;
 }
 
+/** What another screen (e.g. Rumi "Add to my shop") may pass in router state as `prefill`. */
+export interface ProductPrefill {
+  name?: string;
+  inspiredBy?: string;
+  description?: string;
+  imageUrl?: string;
+  category?: string;
+}
+
+const REQUIRED: ProductSizeKey = 'size30';
+
 @Component({
   standalone: true,
-  imports: [FormsModule, RouterLink, IconComponent],
+  imports: [FormsModule, RouterLink, IconComponent, LoaderComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './product-edit.page.html',
   styleUrl: './product-edit.page.scss',
@@ -60,7 +74,8 @@ export class ProductEditPage {
   private readonly scan = inject(ScanService);
   private readonly router = inject(Router);
 
-  readonly sizeRows = PRODUCT_SIZE_KEYS.map((key) => ({ key, label: PRODUCT_SIZE_LABELS[key] }));
+  readonly sizeRows = PRODUCT_SIZE_KEYS.map((key) => ({ key, label: PRODUCT_SIZE_LABELS[key], required: key === REQUIRED }));
+  readonly genders = ['Men', 'Women', 'Unisex'];
   readonly marginLabel = marginLabel;
   readonly isDataUrl = isDataUrl;
   readonly hideImg = hideBrokenImg;
@@ -68,9 +83,19 @@ export class ProductEditPage {
   /** The editable model. Mutated in place by ngModel; `touch()` after async changes. */
   readonly form = signal<ProductForm | null>(null);
   readonly saving = signal(false);
-  readonly uploading = signal<string | null>(null);
+  /** Uploads in flight per slot ('main', 'gallery', or a size key). */
+  readonly uploads = signal<Record<string, number>>({});
+  readonly uploading = computed(() => Object.keys(this.uploads()).length > 0);
+  /** Which sizes are offered (toggle chips). Off sizes have no price, so they aren't saved. */
+  readonly sizeOn = signal<Record<ProductSizeKey, boolean>>({ size30: true, size50: false, size100: false });
+  readonly prefilled = signal(false);
   galleryUrl = '';
   private loadedFor: string | undefined | null = null;
+  /** Price a size had before it was switched off, restored when switched back on. */
+  private parked: Partial<Record<ProductSizeKey, number | null>> = {};
+  private readonly bulk = loadBulkPrices();
+  /** Router state is only readable while the navigation is in progress — grab it now. */
+  private readonly navPrefill = this.router.getCurrentNavigation()?.extras.state?.['prefill'] as ProductPrefill | undefined;
 
   readonly isNew = computed(() => !this.id() || this.id() === 'new');
   readonly editingId = computed(() => (this.isNew() ? null : this.id()!));
@@ -86,6 +111,9 @@ export class ProductEditPage {
     if (!id) return 0;
     return pendingRestockCount(this.shop, id);
   });
+  /** Existing categories, for suggestions. */
+  readonly categories = computed(() =>
+    [...new Set(this.shop.products().map((p) => (p.category || '').trim()).filter(Boolean))].sort());
 
   constructor() {
     // Fill the form once per product (later live updates don't clobber edits).
@@ -95,10 +123,20 @@ export class ProductEditPage {
       const p = this.product();
       untracked(() => {
         if (this.loadedFor === id && this.form()) return;
-        if (isNew) { this.form.set(this.emptyForm()); this.loadedFor = id; }
-        else if (p) { this.form.set(this.formFrom(p)); this.loadedFor = id; }
+        if (isNew) { this.load(this.newForm()); this.loadedFor = id; }
+        else if (p) { this.load(this.formFrom(p)); this.loadedFor = id; }
       });
     });
+  }
+
+  private load(f: ProductForm): void {
+    this.parked = {};
+    this.sizeOn.set({
+      size30: true,
+      size50: Number(f.sizes.size50.price) > 0,
+      size100: Number(f.sizes.size100.price) > 0,
+    });
+    this.form.set(f);
   }
 
   /** Re-render after an async change to the form model. */
@@ -108,33 +146,74 @@ export class ProductEditPage {
     return row.price && row.cost ? marginLabel(row.price, row.cost) : null;
   }
 
+  // ---------------- Sizes ----------------
+  toggleSize(key: ProductSizeKey): void {
+    const f = this.form();
+    if (!f) return;
+    if (key === REQUIRED) { this.ui.toast('30ml is always offered — give it a price', 'info'); return; }
+    const s = f.sizes[key];
+    const on = !this.sizeOn()[key];
+    if (on) {
+      s.price = this.parked[key] ?? (Number(s.price) > 0 ? s.price : this.bulk[key]);
+      s.inStock = s.stockQty == null ? true : Number(s.stockQty) > 0;
+    } else {
+      this.parked[key] = s.price;
+      s.price = null;
+    }
+    this.sizeOn.update((m) => ({ ...m, [key]: on }));
+  }
+
+  /** Stock typed → "in stock" follows quantity > 0. */
+  setStock(key: ProductSizeKey, v: unknown): void {
+    const s = this.form()?.sizes[key];
+    if (!s) return;
+    const n = numOrNull(v);
+    s.stockQty = n;
+    if (n != null) s.inStock = n > 0;
+  }
+
   // ---------------- Images ----------------
-  private async pickImage(ev: Event, slot: string, maxDim: number, quality: number, apply: (url: string) => void): Promise<void> {
-    const input = ev.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.uploading.set(slot);
+  busy(slot: string): boolean { return (this.uploads()[slot] || 0) > 0; }
+  pending(slot: string): number[] { return Array.from({ length: this.uploads()[slot] || 0 }, (_, i) => i); }
+
+  private async upload(slot: string, file: File, maxDim: number, quality: number, apply: (url: string) => void): Promise<void> {
+    this.uploads.update((u) => ({ ...u, [slot]: (u[slot] || 0) + 1 }));
     try {
       apply(await imageFromFile(file, maxDim, quality, 'kaua/products'));
       this.touch();
     } catch {
       this.ui.toast('Could not process that image', 'err');
     } finally {
-      this.uploading.set(null);
-      input.value = '';
+      this.uploads.update((u) => {
+        const n = { ...u };
+        n[slot] = (n[slot] || 1) - 1;
+        if (n[slot] <= 0) delete n[slot];
+        return n;
+      });
     }
   }
 
+  private files(ev: Event): File[] {
+    const input = ev.target as HTMLInputElement;
+    const list = Array.from(input.files ?? []);
+    input.value = '';
+    return list;
+  }
+
   onMainImageFile(ev: Event): void {
-    void this.pickImage(ev, 'main', 1400, 0.85, (u) => { this.form()!.imageUrl = u; });
+    const [file] = this.files(ev);
+    if (file) void this.upload('main', file, 1400, 0.85, (u) => { this.form()!.imageUrl = u; });
   }
 
   onSizeImageFile(ev: Event, key: ProductSizeKey): void {
-    void this.pickImage(ev, key, 1400, 0.85, (u) => { this.form()!.sizes[key].imageUrl = u; });
+    const [file] = this.files(ev);
+    if (file) void this.upload(key, file, 1400, 0.85, (u) => { this.form()!.sizes[key].imageUrl = u; });
   }
 
   onGalleryFile(ev: Event): void {
-    void this.pickImage(ev, 'gallery', 1200, 0.8, (u) => { const f = this.form()!; f.gallery = [...f.gallery, u]; });
+    for (const file of this.files(ev)) {
+      void this.upload('gallery', file, 1200, 0.8, (u) => { const f = this.form()!; f.gallery = [...f.gallery, u]; });
+    }
   }
 
   addGalleryUrl(): void {
@@ -254,6 +333,36 @@ export class ProductEditPage {
   }
 
   // ---------------- Form builders ----------------
+  /** A blank product with smart defaults: bulk prices per size, plus any router prefill. */
+  private newForm(): ProductForm {
+    const f = this.emptyForm();
+    for (const key of PRODUCT_SIZE_KEYS) {
+      const price = this.bulk[key];
+      if (price != null) {
+        f.sizes[key].price = price;
+        f.sizes[key].inStock = true;
+      }
+    }
+    const pre = this.readPrefill();
+    if (pre) {
+      f.name = String(pre.name ?? '').trim();
+      f.inspiredBy = String(pre.inspiredBy ?? '').trim();
+      f.description = String(pre.description ?? '').trim();
+      f.imageUrl = String(pre.imageUrl ?? '').trim();
+      f.category = String(pre.category ?? '').trim();
+      this.prefilled.set(true);
+    }
+    return f;
+  }
+
+  private readPrefill(): ProductPrefill | null {
+    let p: unknown = this.navPrefill;
+    if (!p) {
+      try { p = (history.state as { prefill?: ProductPrefill } | null)?.prefill; } catch { p = null; }
+    }
+    return p && typeof p === 'object' ? (p as ProductPrefill) : null;
+  }
+
   private emptyForm(): ProductForm {
     return {
       name: '', description: '', size: '30ml', price: null, salePrice: null, cost: null, stockQty: null,

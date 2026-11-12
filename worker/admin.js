@@ -162,6 +162,30 @@ function htmlResponse(body, status) {
   });
 }
 
+// Rumi Fragrances (sister company) catalogue for "Sync from Rumi" in the web
+// admin. Only behind the password gate, and only ever fetches Rumi's product
+// sitemap or an "Inspired By" product page — never an arbitrary URL.
+const RUMI_ORIGIN = 'https://rumifragrances.co.za';
+async function rumiProxy(url) {
+  let target;
+  try { target = new URL(url.searchParams.get('u') || ''); } catch { return new Response('Bad url', { status: 400 }); }
+  const ok = target.origin === RUMI_ORIGIN && !target.search && !target.hash &&
+    (target.pathname === '/sitemap/products-0' || /^\/product\/inspired-by-[a-z0-9-]+$/i.test(target.pathname));
+  if (!ok) return new Response('Not allowed', { status: 403 });
+  try {
+    const res = await fetch(target.toString(), {
+      headers: { 'User-Agent': 'KauaTracker/1.0 (sister-company catalogue sync)', Accept: 'text/html,application/xml' },
+      cf: { cacheTtl: 900, cacheEverything: true },
+    });
+    return new Response(res.body, {
+      status: res.status,
+      headers: { 'Content-Type': res.headers.get('Content-Type') || 'text/plain', 'Cache-Control': 'no-store' },
+    });
+  } catch {
+    return new Response('Upstream error', { status: 502 });
+  }
+}
+
 async function handle(request, env) {
   const url = new URL(request.url);
 
@@ -197,6 +221,7 @@ async function handle(request, env) {
   }
 
   if (await tokenValid(env, cookieFrom(request))) {
+    if (url.pathname === '/api/rumi') return rumiProxy(url);
     return env.ASSETS.fetch(request);
   }
 

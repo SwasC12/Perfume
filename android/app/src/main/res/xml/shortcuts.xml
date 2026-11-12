@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Kaua Tracker icon for these. Each opens kauatracker://<path>,
+     which the app routes to that screen (see app.component.ts, appUrlOpen). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_scan"
+        android:shortcutLongLabel="@string/shortcut_scan">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="co.za.kauafragrances.admin"
+            android:targetClass="co.za.kauafragrances.admin.MainActivity"
+            android:data="kauatracker://scan" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="pos"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_pos"
+        android:shortcutLongLabel="@string/shortcut_pos">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="co.za.kauafragrances.admin"
+            android:targetClass="co.za.kauafragrances.admin.MainActivity"
+            android:data="kauatracker://pos" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="orders"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_orders"
+        android:shortcutLongLabel="@string/shortcut_orders">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="co.za.kauafragrances.admin"
+            android:targetClass="co.za.kauafragrances.admin.MainActivity"
+            android:data="kauatracker://orders" />
+    </shortcut>
+</shortcuts>
