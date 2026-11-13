@@ -2,6 +2,7 @@ rules_version = '2';
 
 // Firestore security rules for the shared Kauā Fragrances project (perfume-3b075).
 // Used by BOTH the Oil Tracker admin app and the kf-publicsite storefront.
+// Keep this file identical in both repos.
 //
 // SETUP: replace the UID in isAdmin() if the admin user changes, then paste this
 // whole file into console -> Firestore Database -> Rules -> Publish.
@@ -34,6 +35,7 @@ service cloud.firestore {
         && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
         && request.resource.data.productId is string
         && request.resource.data.productId.size() <= 128
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 60
         && request.resource.data.text is string
@@ -49,18 +51,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Store settings (delivery, banking, whatsapp…) — public read, admin write.
+    // Store settings (delivery, whatsapp, contact…) — public read, admin write.
     match /settings/{doc} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Public order-status lookup (by reference) for the Track page.
-    // Written by the shop Worker (Admin SDK) and by the admin app.
+    // Order-status mirror, written by the shop Worker (Admin SDK) and the admin app.
+    // Not public: references are short and guessable, and the shop's Track page
+    // looks orders up through the Worker's /api/lookup-order (reference + email).
     match /orderStatus/{ref} {
-      allow get: if true;
-      allow list: if isAdmin();
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
 
     // Customer profiles — each customer manages their own; the admin can view/modify all.
@@ -90,8 +91,11 @@ service cloud.firestore {
       allow create: if request.resource.data.notified == false
         && request.resource.data.email is string
         && request.resource.data.email.size() < 200
+        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
         && request.resource.data.productId is string
         && request.resource.data.productId.size() <= 128
+        && (!('productName' in request.resource.data) || (request.resource.data.productName is string && request.resource.data.productName.size() <= 200))
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
         && request.resource.data.keys().hasOnly(['productId', 'productName', 'email', 'createdAt', 'notified']);
       allow read, update, delete: if isAdmin();
     }
@@ -101,6 +105,12 @@ service cloud.firestore {
     match /orders/{id} {
       allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
       allow create, update, delete: if isAdmin();
+    }
+
+    // Customer display: the till mirrors its cart to posDisplay/current and a
+    // second device signed in as the admin shows it to the customer.
+    match /posDisplay/{id} {
+      allow read, write: if isAdmin();
     }
 
     // Business expenses (Budgeting tab) — admin only, never public.

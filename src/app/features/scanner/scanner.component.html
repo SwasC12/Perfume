@@ -1,4 +1,5 @@
-<div class="scn" [class.native]="native">
+<div #root class="scn" [class.native]="native" [class.typing]="typing()"
+     (focusin)="onFocusIn($event)" (focusout)="onFocusOut()">
   <!-- ================= Top bar ================= -->
   <header class="scn-top">
     <button type="button" class="scn-icon-btn" (click)="close()" aria-label="Close scanner">

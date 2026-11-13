@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { CurrencyPipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ShopAdminService } from '../../shop-admin.service';
@@ -7,7 +7,8 @@ import { ScanService } from '../../core/scan.service';
 import { SheetComponent } from '../../shared/sheet.component';
 import { LoaderComponent } from '../../shared/loader.component';
 import { IconComponent } from '../../icon.component';
-import { productImage } from '../../product-image';
+import { isCustomImage, placeholderFor, productImage } from '../../product-image';
+import { CustomerDisplayService, DisplayLine } from '../../core/customer-display.service';
 import { SoundManager } from '../../sound/sound-manager';
 import { computeDiscount, discountError, DiscountLine, posDiscountLine } from '../../discount-util';
 import {
@@ -66,6 +67,7 @@ export class PosPage implements OnInit, OnDestroy {
   readonly queue = inject(PosQueueService);
   private ui = inject(UiService);
   private scan = inject(ScanService);
+  private display = inject(CustomerDisplayService);
 
   readonly search = signal('');
   readonly gender = signal('');
@@ -92,6 +94,48 @@ export class PosPage implements OnInit, OnDestroy {
   private flashTimer: ReturnType<typeof setTimeout> | undefined;
   private doneUnregister: (() => void) | null = null;
   private seq = 0;
+
+  /** Last line that was added or changed: the customer display shows its bottle. */
+  private focusKey: string | null = null;
+  private prevQty = new Map<string, number>();
+  /** After a sale, keep "Thank you" on the customer display for a moment. */
+  private holdIdleUntil = 0;
+
+  constructor() {
+    // Mirror the till on the customer display (another phone/tablet on /display).
+    effect(() => {
+      const cart = this.cart();
+      const subtotal = this.subtotal(), discount = this.discountAmount(), total = this.total();
+      untracked(() => this.mirror(cart, subtotal, discount, total));
+    });
+  }
+
+
+  private displayLine(l: PosLine): DisplayLine {
+    const s = l.sizeKey ? l.product.sizes?.[l.sizeKey] : null;
+    // The 3D bottle is a 100ml: use the 100ml photo, else the product photo, else the 100ml placeholder.
+    const own100 = l.product.sizes?.size100?.imageUrl;
+    const label = isCustomImage(own100) ? own100! : isCustomImage(l.product.imageUrl) ? l.product.imageUrl! : placeholderFor(l.product.gender, '100ml');
+    return {
+      productId: l.product.id, name: l.product.name, size: s?.size || l.product.size || '',
+      qty: l.qty, price: this.unit(l), gender: l.product.gender || '', label,
+    };
+  }
+
+  private mirror(cart: PosLine[], subtotal: number, discount: number, total: number): void {
+    const now = new Map(cart.map((l) => [this.lineKey(l), l.qty]));
+    for (const [k, q] of now) if (q > (this.prevQty.get(k) ?? 0)) this.focusKey = k;
+    if (this.focusKey && !now.has(this.focusKey)) this.focusKey = cart.length ? this.lineKey(cart[cart.length - 1]) : null;
+    this.prevQty = now;
+    if (!cart.length && Date.now() < this.holdIdleUntil) return;
+    const lines = cart.map((l) => this.displayLine(l));
+    const focusLine = cart.find((l) => this.lineKey(l) === this.focusKey);
+    this.display.publish({
+      state: cart.length ? 'cart' : 'idle',
+      lines, focus: focusLine ? this.displayLine(focusLine) : null,
+      subtotal, discount, total,
+    });
+  }
 
   ngOnInit(): void { document.body.classList.add(BODY_CLASS); }
   ngOnDestroy(): void {
@@ -455,6 +499,12 @@ export class PosPage implements OnInit, OnDestroy {
       discountCode: this.discount()?.code, discountAmount: disc,
     };
     const change = this.payment() === 'cash' && this.cash() ? this.change() : 0;
+    // Customer display: "Thank you" + confetti for a few seconds.
+    this.holdIdleUntil = Date.now() + 8000;
+    this.display.publishNow({
+      state: 'paid', lines: lines.map((l) => this.displayLine(l)), focus: null,
+      subtotal: this.subtotal(), discount: disc, total: this.total(), method: this.payment(), change,
+    });
     const seq = ++this.seq;
     const summary: DoneSale = {
       seq, total: this.total(), change, method: this.payment(), items: this.itemCount(), reference: null, queued: false,

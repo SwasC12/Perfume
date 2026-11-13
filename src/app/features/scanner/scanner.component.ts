@@ -158,6 +158,7 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
   private untrigger: (() => void) | null = null;
 
   ngAfterViewInit(): void {
+    this.fitToViewport();
     void SoundManager.unlock();
     void this.start();
     if (SoundManager.settings.volumeTrigger) {
@@ -173,6 +174,47 @@ export class ScannerComponent implements AfterViewInit, OnDestroy {
     this.untrigger?.();
     clearTimeout(this.flashTimer);
     clearTimeout(this.beamTimer);
+    this.stopViewportFit?.();
+  }
+
+  // ---------------------------------------------- on-screen keyboard
+  /** True while a text field in the scanner has focus (keyboard is up). */
+  readonly typing = signal(false);
+  @ViewChild('root') rootRef?: ElementRef<HTMLElement>;
+  private stopViewportFit: (() => void) | null = null;
+
+  onFocusIn(e: FocusEvent): void {
+    const t = e.target as HTMLElement | null;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) this.typing.set(true);
+  }
+
+  onFocusOut(): void {
+    // Wait a tick: focus may just be moving to the Enter button.
+    setTimeout(() => {
+      const a = document.activeElement as HTMLElement | null;
+      if (!a || !this.rootRef?.nativeElement.contains(a) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) this.typing.set(false);
+    }, 120);
+  }
+
+  /**
+   * Keep the scanner inside the area the keyboard leaves visible. Some phones
+   * (e.g. Huawei / older Android) slide the page up under the keyboard instead
+   * of resizing it, which pushed the top bar off-screen. visualViewport tells
+   * us the real visible box on every phone.
+   */
+  private fitToViewport(): void {
+    const vv = window.visualViewport;
+    const el = this.rootRef?.nativeElement;
+    if (!vv || !el) return;
+    const apply = () => {
+      el.style.top = vv.offsetTop + 'px';
+      el.style.height = vv.height + 'px';
+      el.style.bottom = 'auto';
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    this.stopViewportFit = () => { vv.removeEventListener('resize', apply); vv.removeEventListener('scroll', apply); };
   }
 
   toggleAim(): void {

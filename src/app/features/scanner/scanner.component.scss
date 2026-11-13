@@ -363,8 +363,11 @@
   .scn-gen { border-radius: 20px; }
 }
 
-/* Short landscape phones: keep the sheet from eating the viewfinder. */
-@media (max-height: 520px) and (orientation: landscape) {
+/* Short landscape phones: keep the sheet from eating the viewfinder.
+   min-width matters: an upright phone with the keyboard open is also "short
+   and wider than tall" (e.g. ~360x300 on a Huawei P20) and must NOT switch to
+   the side-by-side layout. A phone that's really sideways is 600px+ wide. */
+@media (max-height: 520px) and (min-width: 600px) {
   .scn {
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-rows: auto auto minmax(0, 1fr);
@@ -456,4 +459,16 @@
   .scn-count { min-width: 32px; height: 28px; padding: 0 8px; font-size: 14px; }
   .scn-title strong { font-size: 16px; }
   .scn-modes button { font-size: 12.5px; padding: 0 2px; }
+}
+
+/* ---------------- typing a code (keyboard up) ----------------
+   Fold the camera and mode tabs away so the code box, Enter and the result
+   fit above the keyboard on any phone. Camera keeps running underneath. */
+@media (max-width: 599px) {
+  .scn.typing {
+    grid-template-rows: auto 0 0 minmax(0, 1fr);
+    .scn-modes, .scn-view { visibility: hidden; overflow: hidden; min-height: 0; padding: 0; border: 0; }
+    .scn-sheet { max-height: none; border-radius: 0; }
+    .scn-entry { order: -1; }
+  }
 }

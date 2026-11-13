@@ -12,6 +12,7 @@ export const NAV: NavItem[] = [
   { path: 'orders', label: 'Orders', icon: 'receipt', group: 'shop', admin: true },
   { path: 'pos', label: 'Point of sale', icon: 'wallet', group: 'shop', admin: true },
   { path: 'scan', label: 'Scanner', icon: 'qr', group: 'shop', admin: true },
+  { path: 'display', label: 'Customer display', icon: 'eye', group: 'shop', admin: true },
   { path: 'products', label: 'Products', icon: 'package', group: 'shop', admin: true },
   { path: 'customers', label: 'Customers', icon: 'users', group: 'shop', admin: true },
 
@@ -22,6 +23,7 @@ export const NAV: NavItem[] = [
   { path: 'storefront', label: 'Storefront', icon: 'store', group: 'manage', admin: true },
   { path: 'images', label: 'Images', icon: 'image', group: 'manage', admin: true },
   { path: 'settings', label: 'Settings', icon: 'settings', group: 'manage', admin: true },
+  { path: 'lab', label: '3D Lab', icon: 'box', group: 'manage', admin: true },
 
   { path: 'oils', label: 'My oils', icon: 'droplet', group: 'personal', admin: false },
   { path: 'wishlist', label: 'Wishlist', icon: 'star', group: 'personal', admin: false },

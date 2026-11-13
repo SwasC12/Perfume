@@ -50,6 +50,8 @@ export const routes: Routes = [
   { path: 'budget', ...admin, loadComponent: () => import('./features/budget/budget.page').then((m) => m.BudgetPage) },
   { path: 'settings', ...admin, loadComponent: () => import('./features/settings/settings.page').then((m) => m.SettingsPage) },
 
+  { path: 'display', ...admin, loadComponent: () => import('./features/display/display.page').then((m) => m.DisplayPage) },
+  { path: 'lab', ...admin, loadComponent: () => import('./features/lab/lab.page').then((m) => m.LabPage) },
   { path: 'scan', ...admin, loadComponent: () => import('./features/scanner/scan.page').then((m) => m.ScanPage) },
 
   { path: 'oils', loadComponent: () => import('./features/personal/oils.page').then((m) => m.OilsPage) },
