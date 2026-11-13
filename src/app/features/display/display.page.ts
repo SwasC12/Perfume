@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { CustomerDisplayService, DisplayLine, DisplayState } from '../../core/customer-display.service';
 import { ShopAdminService } from '../../shop-admin.service';
 import { UiService } from '../../core/ui.service';
-import { isCustomImage, placeholderFor } from '../../product-image';
+import { placeholderFor } from '../../product-image';
 import { sizeOptions } from '../../models';
 import { LoaderComponent } from '../../shared/loader.component';
 import type { BottleStage } from '../lab/bottle3d';
@@ -144,8 +144,7 @@ export class DisplayPage implements AfterViewInit, OnDestroy {
     void this.keepAwake();
     document.addEventListener('visibilitychange', this.onVisible);
     this.unregisterBack = this.ui.pushOverlay(() => this.leave());
-    const { BottleStage, oilFor } = await import('../lab/bottle3d');
-    this.oilFor = oilFor;
+    const { BottleStage } = await import('../lab/bottle3d');
     this.zone.runOutsideAngular(() => { this.stage = new BottleStage(this.stageRef.nativeElement); });
     this.ready.set(true);
     this.unwatch = this.display.watch((s) => this.zone.run(() => { this.state.set(s); this.react(); }));
@@ -154,7 +153,6 @@ export class DisplayPage implements AfterViewInit, OnDestroy {
     this.react();
   }
 
-  private oilFor: (g?: string, out?: boolean) => number = () => 0xd99a2b;
 
   /** Decide what the 3D stage should show for the current state. */
   private react(): void {
@@ -167,7 +165,7 @@ export class DisplayPage implements AfterViewInit, OnDestroy {
       if (f) {
         const key = f.productId + '|' + (f.size || '');
         if (key !== this.shownKey) {
-          this.stage.show({ label: f.label || '', oil: this.oilFor(f.gender), fill: 0.85 });
+          this.stage.show({ art: placeholderFor(f.gender, '100ml'), name: f.name });
           this.shownKey = key;
         } else if (this.lastMode === 'cart' && this.lastQty < f.qty) {
           this.stage.bounce();
@@ -188,10 +186,8 @@ export class DisplayPage implements AfterViewInit, OnDestroy {
     this.lastShowcase = Date.now();
     if (!list.length || !this.stage) { this.show.set(null); return; }
     const p = list[this.showcaseIdx++ % list.length];
-    const own100 = p.sizes?.size100?.imageUrl;
-    const label = isCustomImage(own100) ? own100! : isCustomImage(p.imageUrl) ? p.imageUrl! : placeholderFor(p.gender, '100ml');
     const from = Math.min(...sizeOptions(p).map((o) => Number(o.size.salePrice) > 0 && Number(o.size.salePrice) < Number(o.size.price) ? Number(o.size.salePrice) : Number(o.size.price)));
-    this.stage.show({ label, oil: this.oilFor(p.gender), fill: 0.85 });
+    this.stage.show({ art: placeholderFor(p.gender, '100ml'), name: p.name });
     this.shownKey = '';
     this.show.set({ name: p.name, price: Number.isFinite(from) ? from : 0 });
   }

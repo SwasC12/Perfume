@@ -3,7 +3,7 @@ import { CurrencyPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ShopAdminService } from '../../shop-admin.service';
 import { Product, sizeOptions } from '../../models';
-import { isCustomImage, placeholderFor } from '../../product-image';
+import { placeholderFor } from '../../product-image';
 import { IconComponent } from '../../icon.component';
 import { LoaderComponent } from '../../shared/loader.component';
 import type { BottleStage } from './bottle3d';
@@ -58,12 +58,10 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   });
 
   private stage: BottleStage | null = null;
-  private oilFor: (g?: string, out?: boolean) => number = () => 0xd99a2b;
   private swipeX: number | null = null;
 
   async ngAfterViewInit(): Promise<void> {
     const m = await import('./bottle3d');
-    this.oilFor = m.oilFor;
     this.zone.runOutsideAngular(() => {
       this.stage = new m.BottleStage(this.stageRef.nativeElement, { controls: true });
       const el = this.stage.renderer.domElement;
@@ -88,11 +86,10 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   private render(): void {
     const p = this.current();
     if (!p || !this.stage) return;
-    const own100 = p.sizes?.size100?.imageUrl;
-    const label = isCustomImage(own100) ? own100! : isCustomImage(p.imageUrl) ? p.imageUrl! : placeholderFor(p.gender, '100ml');
     const s = this.stock(p);
-    this.stage.spinSpeed = 0.6;
-    this.stage.show({ label, oil: this.oilFor(p.gender, s <= 0), fill: s <= 0 ? 0.06 : 0.85 });
+    this.stage.spinSpeed = 0.55;
+    // Sold out: an almost empty bottle.
+    this.stage.show({ art: placeholderFor(p.gender, '100ml'), name: p.name, fill: s <= 0 ? 0.06 : 0.94 });
   }
 
   stock(p: Product): number {
