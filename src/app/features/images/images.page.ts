@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, effect, inject, signal, untracked }
 import { ShopAdminService } from '../../shop-admin.service';
 import { UiService } from '../../core/ui.service';
 import { IconComponent } from '../../icon.component';
-import { imageFromFile } from '../../cloudinary';
+import { uploadToCloudinary } from '../../cloudinary';
+import { compressImage } from '../../image-util';
 import { placeholderFor } from '../../product-image';
 
 type SlotKey = 'men30' | 'men50' | 'men100' | 'women30' | 'women50' | 'women100';
@@ -163,10 +164,14 @@ export class ImagesPage {
     if (!file) return;
     this.uploading.set(key);
     try {
-      const url = await imageFromFile(file, 1400, 0.85, 'kaua/placeholders');
+      // Always a Cloudinary link, never the photo itself: these slots live in
+      // the shop's settings records, which Firebase caps at 1 MB in total.
+      const url = await uploadToCloudinary(await compressImage(file, 1400, 0.85), 'kaua/placeholders');
       this.touched.add(key);
       this.form.update((f) => ({ ...f, [key]: url }));
-    } catch { this.ui.toast('Could not read that image', 'err'); }
+    } catch (e: any) {
+      this.ui.toast('Upload failed: ' + (e?.message || 'check your connection'), 'err');
+    }
     finally { this.uploading.set(null); input.value = ''; }
   }
 
@@ -177,7 +182,21 @@ export class ImagesPage {
 
   async save(): Promise<void> {
     if (this.saving()) return;
-    const f = this.form();
+    this.saving.set(true);
+    // Photos saved by older versions sit inside the record as raw data and
+    // fill it up. Move each one to Cloudinary before saving.
+    let f = { ...this.form() };
+    const inline = (Object.keys(f) as SlotKey[]).filter((k) => f[k].startsWith('data:'));
+    for (const k of inline) {
+      try {
+        f[k] = await uploadToCloudinary(f[k], 'kaua/placeholders');
+      } catch (e: any) {
+        this.saving.set(false);
+        this.ui.toast('Could not move the ' + (this.slotByKey.get(k)?.label || k) + ' photo to Cloudinary: ' + (e?.message || 'try again'), 'err');
+        return;
+      }
+    }
+    if (inline.length) this.form.set(f);
     const fields = {
       placeholderMen: f.men30 || '',
       placeholderWomen: f.women30 || '',
@@ -188,7 +207,6 @@ export class ImagesPage {
       placeholderWomen50: f.women50 || '',
       placeholderWomen100: f.women100 || '',
     };
-    this.saving.set(true);
     try {
       await this.shop.savePlaceholderImages(fields);
       // Keep the legacy settings copy in sync for older screens.

@@ -15,7 +15,7 @@ export function cloudinaryReady(): boolean {
   return !cloudinaryDisabled;
 }
 
-interface Signed { signature: string; timestamp: number; apiKey: string; folder: string; uploadPreset: string; }
+interface Signed { signature: string; timestamp: number; apiKey: string; folder: string; uploadPreset: string; cloudName?: string; }
 
 async function sign(folder: string): Promise<Signed> {
   const user = getAuthInstance().currentUser;
@@ -43,7 +43,7 @@ export async function uploadToCloudinary(dataUrl: string, folder = 'kaua/product
   form.append('timestamp', String(s.timestamp));
   form.append('api_key', s.apiKey);
   form.append('signature', s.signature);
-  const res = await fetch('https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD + '/image/upload', { method: 'POST', body: form });
+  const res = await fetch('https://api.cloudinary.com/v1_1/' + (s.cloudName || CLOUDINARY_CLOUD) + '/image/upload', { method: 'POST', body: form });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.secure_url) throw new Error((data && data.error && data.error.message) || 'Upload failed');
   return String(data.secure_url);

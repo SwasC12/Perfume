@@ -56,7 +56,11 @@ export interface ProductPrefill {
   category?: string;
 }
 
-const REQUIRED: ProductSizeKey = 'size30';
+
+/** Has the per-size map (anything saved by the size-aware editor). */
+function hasSizes(p: Product): boolean {
+  return !!p.sizes && PRODUCT_SIZE_KEYS.some((k) => !!p.sizes?.[k]);
+}
 
 @Component({
   standalone: true,
@@ -74,7 +78,7 @@ export class ProductEditPage {
   private readonly scan = inject(ScanService);
   private readonly router = inject(Router);
 
-  readonly sizeRows = PRODUCT_SIZE_KEYS.map((key) => ({ key, label: PRODUCT_SIZE_LABELS[key], required: key === REQUIRED }));
+  readonly sizeRows = PRODUCT_SIZE_KEYS.map((key) => ({ key, label: PRODUCT_SIZE_LABELS[key], required: false }));
   readonly genders = ['Men', 'Women', 'Unisex'];
   readonly marginLabel = marginLabel;
   readonly isDataUrl = isDataUrl;
@@ -131,8 +135,12 @@ export class ProductEditPage {
 
   private load(f: ProductForm): void {
     this.parked = {};
+    // Any size can be offered on its own (some scents only come in 100ml).
+    // A brand-new product starts with 30ml on; an existing one shows what it sells.
+    const priced = (k: ProductSizeKey) => Number(f.sizes[k].price) > 0;
+    const none = !priced('size30') && !priced('size50') && !priced('size100');
     this.sizeOn.set({
-      size30: true,
+      size30: priced('size30') || none,
       size50: Number(f.sizes.size50.price) > 0,
       size100: Number(f.sizes.size100.price) > 0,
     });
@@ -150,9 +158,12 @@ export class ProductEditPage {
   toggleSize(key: ProductSizeKey): void {
     const f = this.form();
     if (!f) return;
-    if (key === REQUIRED) { this.ui.toast('30ml is always offered — give it a price', 'info'); return; }
     const s = f.sizes[key];
     const on = !this.sizeOn()[key];
+    if (!on && PRODUCT_SIZE_KEYS.filter((k) => this.sizeOn()[k]).length <= 1) {
+      this.ui.toast('Keep at least one size — switch another size on first', 'info');
+      return;
+    }
     if (on) {
       s.price = this.parked[key] ?? (Number(s.price) > 0 ? s.price : this.bulk[key]);
       s.inStock = s.stockQty == null ? true : Number(s.stockQty) > 0;
@@ -253,9 +264,12 @@ export class ProductEditPage {
         imageUrl: row.imageUrl.trim() || undefined,
       };
     }
-    const s30 = sizes.size30;
+    // The smallest size on sale is the "main" one (top-level fields that
+    // older code and the storefront list read): 30ml, else 50ml, else 100ml.
+    const mainKey = PRODUCT_SIZE_KEYS.find((k) => sizes[k]);
+    const s30 = mainKey ? sizes[mainKey]! : null;
     if (!name || !s30) {
-      this.ui.toast('Name and a 30ml price are required', 'err');
+      this.ui.toast(!name ? 'Give the product a name' : 'Give at least one size a price', 'err');
       return;
     }
     const gallery = form.gallery.filter(Boolean);
@@ -415,10 +429,12 @@ export class ProductEditPage {
       notesBase: p.notesBase ?? '',
       longDescription: p.longDescription ?? '',
       sizes: {
-        size30: this.sizeFormFrom(p.sizes?.size30 || {
+        // Very old products have no sizes map, only top-level fields (which were 30ml).
+        // Don't invent a 30ml row for products that simply don't sell 30ml.
+        size30: this.sizeFormFrom(p.sizes?.size30 || (hasSizes(p) ? undefined : {
           size: p.size || '30ml', price: p.price, salePrice: p.salePrice, cost: p.cost,
           stockQty: p.stockQty, inStock: p.inStock, imageUrl: p.imageUrl,
-        }, '30ml'),
+        }), '30ml'),
         size50: this.sizeFormFrom(p.sizes?.size50, '50ml'),
         size100: this.sizeFormFrom(p.sizes?.size100, '100ml'),
       },
